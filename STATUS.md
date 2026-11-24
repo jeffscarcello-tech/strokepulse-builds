@@ -4,7 +4,7 @@ GPS speed coach web app for iPhone (rowing / paddling), like the NK SpeedCoach G
 
 ## Current build
 - Test: **sp-20261124a** (v1.1) — first auto-updater release
-- Live: not set up yet
+- Live: not set up yet (test site first)
 
 ## Resources (StrokePulse owns only these)
 - GitHub repo: `jeffscarcello-tech/strokepulse-builds` (public)
