@@ -3,7 +3,7 @@
 GPS speed coach web app for iPhone (rowing / paddling), like the NK SpeedCoach GPS.
 
 ## Current build
-- Test: **sp-20261124a** (v1.1) — first auto-updater release
+- Test: **sp-20261124b** (v1.2) — two-tap STOP (hold-to-stop failed on iPhone)
 - Live: not set up yet (test site first)
 
 ## Resources (StrokePulse owns only these)

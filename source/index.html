@@ -16,6 +16,7 @@
 :root{--bg:#05070a;--panel:#10151c;--line:#1f2833;--fg:#f4f7fa;--dim:#8a97a6;--acc:#2f9bff;--good:#2ed47a;--warn:#ffb020;--bad:#ff4d4f;}
 body.glare{--bg:#ffffff;--panel:#f1f3f5;--line:#c9d0d6;--fg:#000;--dim:#3d4752;--acc:#0057c2;}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0}
+button{-webkit-touch-callout:none}
 html,body{height:100%;background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display",Helvetica,Arial,sans-serif;overscroll-behavior:none;-webkit-user-select:none;user-select:none}
 button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
 .screen{display:none;flex-direction:column;height:100%;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
@@ -162,7 +163,7 @@ canvas{width:100%;display:block;border-radius:8px;background:var(--bg)}
     <p><b>4. Mount it solidly.</b> Use a waterproof case on a rigid mount (rigger or footboard), pointing the same way every time. A loose phone gives a messy stroke rate.</p><br>
     <p><b>5. Wait for green GPS.</b> Give it 20–60 seconds outside before starting. Green = under 10 m accuracy.</p><br>
     <p><b>6. Battery.</b> Screen-on GPS uses roughly 15–25% per hour. Turn on Glare mode in bright sun.</p><br>
-    <p><b>Stopping:</b> hold STOP for one second, so a splash can't end your session.</p><br>
+    <p><b>Stopping:</b> tap STOP, then tap END &amp; SAVE. If you don't confirm within 5 seconds, it keeps recording, so a splash can't end your session.</p><br>
     <p><b>Fields:</b> tap any number on the live screen to choose what it shows.</p><br>
     <p>Version <b>v__LABEL__</b> (build __BUILD__)</p>
   </div></div>
@@ -354,7 +355,7 @@ function endPiece(){
   if(run.rep < run.wk.reps){
     run.phase='rest'; run.restEnd=Date.now()+run.wk.rest*1000; run.lastBeep=-1;
     if(run.wk.rest<=0) startPiece();
-  } else { run.phase='done'; toast('Workout complete — row easy, hold STOP to save'); }
+  } else { run.phase='done'; toast('Workout complete — tap STOP to save'); }
 }
 function startPiece(){
   if(run.phase==='rest') pushLap('rest');
@@ -466,16 +467,21 @@ function renderControls(){
   const c=$('controls');
   if(!run){ c.innerHTML='<button class="btn-go" id="bStart">START</button>'; $('bStart').onclick=startSession; $('menuBtn').style.visibility='visible'; return; }
   $('menuBtn').style.visibility='hidden';
-  c.innerHTML='<button class="btn-lap" id="bLap">LAP</button><button class="btn-stop" id="bStop"><span class="fill" id="stopFill"></span><span style="position:relative">HOLD STOP</span></button>';
+  c.innerHTML='<button class="btn-lap" id="bLap">LAP</button><button class="btn-stop" id="bStop">STOP</button>';
   $('bLap').onclick=()=>{ if(run.wk.mode==='intervals' && run.phase==='rest'){ startPiece(); } else manualLap(); };
-  const b=$('bStop'); let t0=0, raf=0;
-  const down=e=>{ e.preventDefault(); t0=Date.now(); const step=()=>{ const p=Math.min(1,(Date.now()-t0)/1000); $('stopFill').style.width=(p*100)+'%';
-    if(p>=1){ t0=0; stopSession(); return; } raf=requestAnimationFrame(step); }; step(); };
-  const up=()=>{ cancelAnimationFrame(raf); t0=0; const f=$('stopFill'); if(f) f.style.width='0'; };
-  b.addEventListener('touchstart',down,{passive:false}); b.addEventListener('mousedown',down);
-  b.addEventListener('touchend',up); b.addEventListener('touchcancel',up); b.addEventListener('mouseup',up); b.addEventListener('mouseleave',up);
+  $('bStop').onclick=askStop;
 }
-setInterval(()=>{ workoutTick(); sampleTick(); if($('scr-live').classList.contains('on')) renderLive(); if(run&&run.wk.mode==='intervals'&&run.phase==='rest') $('bLap').textContent='GO NOW'; else if(run&&$('bLap')) $('bLap').textContent='LAP'; }, 250);
+/* Two-tap stop: tap STOP, then tap END & SAVE within 5 s (a splash or bump can't end the session) */
+let stopAskT=null;
+function askStop(){
+  if(!run) return;
+  const c=$('controls');
+  c.innerHTML='<button class="btn-lap" id="bKeep">KEEP GOING</button><button class="btn-stop" id="bEnd">END &amp; SAVE</button>';
+  $('bKeep').onclick=()=>{ clearTimeout(stopAskT); renderControls(); };
+  $('bEnd').onclick=()=>{ clearTimeout(stopAskT); stopSession(); };
+  clearTimeout(stopAskT); stopAskT=setTimeout(()=>{ if(run) renderControls(); }, 5000);
+}
+setInterval(()=>{ workoutTick(); sampleTick(); if($('scr-live').classList.contains('on')) renderLive(); if($('bLap')){ $('bLap').textContent = run&&run.wk.mode==='intervals'&&run.phase==='rest' ? 'GO NOW' : 'LAP'; } }, 250);
 
 /* ---------- navigation ---------- */
 function go(name){ document.querySelectorAll('.screen').forEach(s=>s.classList.remove('on')); $('scr-'+name).classList.add('on');
