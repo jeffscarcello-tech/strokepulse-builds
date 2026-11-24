@@ -22,7 +22,7 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
 .screen{display:none;flex-direction:column;height:100%;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
 .screen.on{display:flex}
 /* status bar */
-.status{display:flex;align-items:center;gap:10px;padding:8px 12px;font-size:14px;color:var(--dim);border-bottom:1px solid var(--line)}
+.status{display:flex;align-items:center;gap:8px;padding:8px 10px;font-size:14px;white-space:nowrap;color:var(--dim);border-bottom:1px solid var(--line)}
 .status .dot{width:10px;height:10px;border-radius:50%;background:var(--bad);display:inline-block;margin-right:5px;vertical-align:middle}
 .status .dot.ok{background:var(--good)}.status .dot.mid{background:var(--warn)}
 .status .sp{flex:1}
@@ -192,6 +192,7 @@ const saveSettings = () => LS.set('sp_settings', S);
 /* ---------- helpers ---------- */
 const $ = id => document.getElementById(id);
 const pad = n => String(n).padStart(2,'0');
+const clock12 = d => ((d.getHours()%12)||12)+':'+pad(d.getMinutes())+' '+(d.getHours()<12?'AM':'PM');
 function toast(m){ const t=$('toast'); t.textContent=m; t.style.display='block'; clearTimeout(toast._t); toast._t=setTimeout(()=>t.style.display='none',2600); }
 function fmtTime(sec, tenths){ if(!isFinite(sec)||sec<0) sec=0; const h=Math.floor(sec/3600), m=Math.floor(sec%3600/60), s=sec%60;
   const ss = tenths ? s.toFixed(1).padStart(4,'0') : pad(Math.floor(s));
@@ -421,7 +422,7 @@ const METRICS = {
   remain:  {lab:'Remaining', unit:()=>{ if(!run||run.wk.mode!=='intervals'||run.phase!=='work') return ''; return run.wk.type==='dist'?distUnit(run.wk.val-(run.dist-run.pieceD)):''; },
             val:()=>{ if(!run||run.wk.mode!=='intervals') return '—'; if(run.phase==='rest') return fmtTime(Math.max(0,(run.restEnd-Date.now())/1000));
               if(run.phase==='done') return 'Done'; if(run.wk.type==='dist') return fmtDist(Math.max(0,run.wk.val-(run.dist-run.pieceD))); return fmtTime(Math.max(0,run.wk.val-(elapsed()-run.pieceT))); }},
-  clock:   {lab:'Time of Day', unit:()=>'', val:()=>{ const d=new Date(); return d.getHours()+':'+pad(d.getMinutes()); }}
+  clock:   {lab:'Time of Day', unit:()=>'', val:()=>clock12(new Date())}
 };
 const METRIC_ORDER=['split','rate','speed','dist','time','avgSplit','avgRate','dps','strokes','remain','totDist','totTime','clock'];
 const inPiece = () => run && run.wk.mode==='intervals' && (run.phase==='work'||run.phase==='rest');
@@ -451,7 +452,7 @@ function renderLive(){
   $('gpsTxt').textContent = gps.lastFix&&age<5 ? '±'+Math.round(gps.acc)+'m' : 'GPS';
   const motOk = S.demo==='1' || (mot.on && performance.now()-mot.last<2000);
   $('motDot').className='dot'+(motOk?' ok':''); $('motTxt').textContent = S.demo==='1' ? 'Demo' : 'Rate';
-  const d=new Date(); $('clock').textContent=d.getHours()+':'+pad(d.getMinutes());
+  $('clock').textContent=clock12(new Date());
   // banner
   const bn=$('banner');
   if(run && run.wk.mode==='intervals'){
@@ -519,7 +520,7 @@ function renderHistory(){
   const idx=LS.get('sp_index',[]); const box=$('histList');
   if(!idx.length){ box.innerHTML='<p class="muted">No sessions yet. Press START on the main screen to record one.</p>'; return; }
   box.innerHTML=idx.map(s=>{ const d=new Date(s.start);
-    return '<button class="item" data-id="'+s.id+'"><div class="t1">'+d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})+' · '+d.getHours()+':'+pad(d.getMinutes())+'</div>'+
+    return '<button class="item" data-id="'+s.id+'"><div class="t1">'+d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})+' · '+clock12(d)+'</div>'+
       '<div class="t2">'+fmtDist(s.dist)+' '+distUnit(s.dist)+' · '+fmtTime(s.time)+' · avg '+(s.time>0?fmtSplit(s.dist/s.time):'–')+splitLabel()+' · '+(s.time>0?(s.strokes/s.time*60).toFixed(1):0)+' spm · '+s.wkDesc+'</div></button>'; }).join('');
   box.querySelectorAll('.item').forEach(b=>b.onclick=()=>openDetail(+b.dataset.id));
 }
@@ -527,7 +528,7 @@ function openDetail(id){
   const idx=LS.get('sp_index',[]); const sm=idx.find(x=>x.id===id); const data=LS.get('sp_s_'+id,null);
   if(!sm||!data){ toast('Session not found'); return; }
   go('detail');
-  const d=new Date(sm.start); $('dTitle').textContent=d.toLocaleDateString(undefined,{month:'short',day:'numeric'})+' '+d.getHours()+':'+pad(d.getMinutes());
+  const d=new Date(sm.start); $('dTitle').textContent=d.toLocaleDateString(undefined,{month:'short',day:'numeric'})+' '+clock12(d);
   const smp=data.samples, T=sm.time;
   const work=smp.filter(s=>!s[7]);
   const maxV=Math.max(0,...work.map(s=>s[4]));
