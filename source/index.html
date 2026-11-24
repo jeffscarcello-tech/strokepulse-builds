@@ -330,6 +330,7 @@ function processAccel(raw, tSec){
   if(L>1e-9){ n[0]/=L;n[1]/=L;n[2]/=L; if(n[0]*v[0]+n[1]*v[1]+n[2]*v[2]<0){n[0]=-n[0];n[1]=-n[1];n[2]=-n[2];} mot.ax=n; }
   const s=b[0]*mot.ax[0]+b[1]*mot.ax[1]+b[2]*mot.ax[2];
   mot.rms2 += 0.003*(s*s-mot.rms2);
+  if(window.COX) COX.accel(s);
   const T = Math.max(0.06, 0.55*Math.sqrt(mot.rms2)/(+S.sens));
   if(mot.st<=0 && s>T) mot.st=1;
   else if(mot.st===1 && s<-T){ mot.st=-1; strokeEvent(tSec); }
@@ -342,6 +343,7 @@ function strokeEvent(tSec){
   else mot.periods=[];
   mot.lastStroke=tSec;
   if(mot.periods.length){ const avg=mot.periods.reduce((a,b)=>a+b,0)/mot.periods.length; mot.rate=60/avg; }
+  if(window.COX) COX.stroke();
   strokeWall.push(Date.now()); if(strokeWall.length>30) strokeWall.shift();
   if(run && run.armed){ armStroke(); return; }
   if(run) run.strokes++;
@@ -396,6 +398,7 @@ async function startSession(){
   run = newRun();
   mot.periods=[]; mot.rate=0; mot.lastStroke=0;
   if(S.demo==='1') startDemo();
+  if(window.COX) COX.sessionStart();
   if(S.wk.auto==='1'){ run.armed=true; renderControls(); toast('Row away — recording starts on your first strokes'); return; }
   beep(1200,250);
   renderControls();
@@ -445,7 +448,7 @@ function sampleTick(){
   if(!run || run.armed) return;
   const s=Math.floor(elapsed()); if(s===lastSampleSec) return; lastSampleSec=s;
   const r=currentRate(nowSecMotion());
-  run.samples.push([s, gps.lat!=null?+gps.lat.toFixed(6):null, gps.lon!=null?+gps.lon.toFixed(6):null, +run.dist.toFixed(1), +curV().toFixed(2), +r.toFixed(1), run.strokes, run.phase==='rest'?1:0]);
+  run.samples.push([s, gps.lat!=null?+gps.lat.toFixed(6):null, gps.lon!=null?+gps.lon.toFixed(6):null, +run.dist.toFixed(1), +curV().toFixed(2), +r.toFixed(1), run.strokes, run.phase==='rest'?1:0, window.COX?+COX.checkVal().toFixed(2):0]);
   if(s%10===0) saveLive();
 }
 function saveLive(){ if(run && !run.armed) LS.set('sp_live', run); }
@@ -454,7 +457,7 @@ function stopSession(){
   if(run.phase==='work' && run.wk.mode==='intervals'){ const el=elapsed(), t=el-run.pieceT, d=run.dist-run.pieceD, s=run.strokes-run.pieceS;
     if(t>3) run.laps.push({ n:run.laps.length+1, type:'work', t, d, s, at:el, rep:run.rep, rate: t>0 ? s/t*60 : 0, partial:true }); }
   else if(run.phase!=='rest' && (elapsed()-run.lapT)>3 && run.laps.length) pushLap('lap');
-  const r=run; run=null; stopDemo(); lastSampleSec=-1;
+  const r=run; if(window.COX) COX.sessionStop(r); run=null; stopDemo(); lastSampleSec=-1;
   if(wakeLock){ try{wakeLock.release();}catch(e){} wakeLock=null; }
   LS.del('sp_live');
   if(r.dist<20 && r.samples.length<20){ toast('Too short — not saved'); renderControls(); return; }
@@ -463,12 +466,12 @@ function stopSession(){
 }
 function summarize(r){
   const T = r.samples.length ? r.samples[r.samples.length-1][0] : 0;
-  return { id:r.id, start:r.start, dist:r.dist, time:T, strokes:r.strokes, sport:r.sport, mode:r.wk.mode,
+  return { id:r.id, start:r.start, dist:r.dist, time:T, strokes:r.strokes, sport:r.sport, mode:r.wk.mode, cox:!!r.cox,
     wkDesc: r.wk.mode==='intervals' ? wkDesc(r.wk) : 'Just Go' };
 }
 function saveSession(r){
   const idx=LS.get('sp_index',[]);
-  if(LS.set('sp_s_'+r.id, {samples:r.samples, laps:r.laps, wk:r.wk})){ idx.unshift(summarize(r)); LS.set('sp_index', idx); }
+  if(LS.set('sp_s_'+r.id, {samples:r.samples, laps:r.laps, wk:r.wk, crew:r.crew, cox:r.cox?{rec:r.cox.rec,chunks:[]}:undefined})){ idx.unshift(summarize(r)); LS.set('sp_index', idx); }
 }
 function wkDesc(w){ const v = w.type==='dist' ? (w.val>=1000 && w.val%1000===0 ? (w.val/1000)+'k' : w.val+'m') : fmtTime(w.val);
   return w.reps+' × '+v+(w.rest>0?' / '+fmtTime(w.rest)+' rest':''); }
@@ -489,9 +492,10 @@ const METRICS = {
   remain:  {lab:'Remaining', unit:()=>{ if(!run||run.wk.mode!=='intervals'||run.phase!=='work') return ''; return run.wk.type==='dist'?distUnit(run.wk.val-(run.dist-run.pieceD)):''; },
             val:()=>{ if(!run||run.wk.mode!=='intervals') return '—'; if(run.phase==='rest') return fmtTime(Math.max(0,(run.restEnd-Date.now())/1000));
               if(run.phase==='done') return 'Done'; if(run.wk.type==='dist') return fmtDist(Math.max(0,run.wk.val-(run.dist-run.pieceD))); return fmtTime(Math.max(0,run.wk.val-(elapsed()-run.pieceT))); }},
+  check:   {lab:'Check', unit:()=>'m/s²', val:()=>window.COX?COX.checkStr():'–'},
   clock:   {lab:'Time of Day', unit:()=>'', val:()=>clock12(new Date())}
 };
-const METRIC_ORDER=['split','rate','speed','dist','time','avgSplit','avgRate','dps','strokes','remain','totDist','totTime','clock'];
+const METRIC_ORDER=['split','rate','speed','dist','time','avgSplit','avgRate','dps','strokes','remain','totDist','totTime','check','clock'];
 const inPiece = () => run && run.wk.mode==='intervals' && (run.phase==='work'||run.phase==='rest');
 const curDist = () => !run ? 0 : inPiece()&&run.phase==='work' ? run.dist-run.pieceD : run.phase==='rest' ? run.dist-run.lapD : run.dist;
 const curTime = () => !run ? 0 : inPiece()&&run.phase==='work' ? elapsed()-run.pieceT : run.phase==='rest' ? elapsed()-run.lapT : elapsed();
@@ -548,7 +552,7 @@ function renderControls(){
   const c=$('controls');
   if(!run){ c.innerHTML='<button class="btn-go" id="bStart">START</button>'; $('bStart').onclick=startSession; $('menuBtn').style.visibility='visible'; return; }
   $('menuBtn').style.visibility='hidden';
-  if(run.armed){ c.innerHTML='<button class="btn-stop" id="bCancel">CANCEL</button>'; $('bCancel').onclick=()=>{ run=null; stopDemo(); if(wakeLock){ try{wakeLock.release();}catch(e){} wakeLock=null; } renderControls(); }; return; }
+  if(run.armed){ c.innerHTML='<button class="btn-stop" id="bCancel">CANCEL</button>'; $('bCancel').onclick=()=>{ if(window.COX) COX.sessionCancel(); run=null; stopDemo(); if(wakeLock){ try{wakeLock.release();}catch(e){} wakeLock=null; } renderControls(); }; return; }
   c.innerHTML='<button class="btn-lap" id="bLap">LAP</button><button class="btn-stop" id="bStop">STOP</button>';
   $('bLap').onclick=()=>{ if(run.wk.mode==='intervals' && run.phase==='rest'){ startPiece(); } else manualLap(); };
   $('bStop').onclick=askStop;
@@ -578,6 +582,7 @@ $('sheet').onclick=e=>{ if(e.target.id==='sheet') closeSheet(); };
 /* ---------- menu / workout setup ---------- */
 function segBind(el, val, cb){ el.querySelectorAll('button').forEach(b=>{ b.classList.toggle('on', b.dataset.v===String(val)); b.onclick=()=>{ cb(b.dataset.v); }; }); }
 function renderMenu(){
+  if(window.COX) COX.menu();
   const w=S.wk;
   segBind($('wkMode'), w.mode, v=>{ w.mode=v; saveSettings(); renderMenu(); });
   segBind($('wkType'), w.type, v=>{ w.type=v; w.val = v==='dist'?1000:240; saveSettings(); renderMenu(); });
@@ -605,6 +610,7 @@ function renderSettings(){
   document.querySelectorAll('[data-set]').forEach(el=>{ const k=el.dataset.set;
     segBind(el, S[k], v=>{ S[k]=v; if(k==='sport') S.splitBase = v==='row'?'500':'1000'; saveSettings(); applyGlare(); if(k==='layout') buildFields(); renderSettings(); }); });
   renderBackup();
+  if(window.COX) COX.settings();
 }
 function applyGlare(){ document.body.classList.toggle('glare', S.theme==='bright'); document.body.classList.toggle('night', S.theme==='night');
   const m=document.querySelector('meta[name=theme-color]'); if(m) m.content = S.theme==='bright' ? '#ffffff' : (S.theme==='night' ? '#000000' : '#05070a'); }
@@ -615,7 +621,7 @@ function renderHistory(){
   if(!idx.length){ box.innerHTML='<p class="muted">No sessions yet. Press START on the main screen to record one.</p>'; return; }
   box.innerHTML=idx.map(s=>{ const d=new Date(s.start);
     return '<button class="item" data-id="'+s.id+'"><div class="t1">'+d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})+' · '+clock12(d)+'</div>'+
-      '<div class="t2">'+fmtDist(s.dist)+' '+distUnit(s.dist)+' · '+fmtTime(s.time)+' · avg '+(s.time>0?fmtSplit(s.dist/s.time):'–')+splitLabel()+' · '+(s.time>0?(s.strokes/s.time*60).toFixed(1):0)+' spm · '+s.wkDesc+(s.synced?' · ☁︎':'')+'</div></button>'; }).join('');
+      '<div class="t2">'+fmtDist(s.dist)+' '+distUnit(s.dist)+' · '+fmtTime(s.time)+' · avg '+(s.time>0?fmtSplit(s.dist/s.time):'–')+splitLabel()+' · '+(s.time>0?(s.strokes/s.time*60).toFixed(1):0)+' spm · '+s.wkDesc+(s.cox?' · 🎙':'')+(s.synced?' · ☁︎':'')+'</div></button>'; }).join('');
   box.querySelectorAll('.item').forEach(b=>b.onclick=()=>openDetail(+b.dataset.id));
 }
 function openDetail(id){
@@ -645,12 +651,13 @@ function openDetail(id){
     html+='<div class="card"><h2>Every '+(imp()?'¼ mile':seg+' m')+'</h2><table><tr><th>At</th><th>Time</th><th>Split</th><th>Rate</th></tr>'+
       segs.map(g=>{ const dt=g.t-pt, dn=g.n-pn, dd=g.at-pd; pt=g.t; pn=g.n; pd=g.at; return '<tr><td>'+fmtDist(g.at)+distUnit(g.at)+'</td><td>'+fmtTime(dt)+'</td><td>'+(dt>0?fmtSplit(dd/dt):'–')+'</td><td>'+(dt>0?(dn/dt*60).toFixed(1):'–')+'</td></tr>'; }).join('')+'</table></div>';
   }
-  html+='<div class="card"><h2>Course</h2><canvas id="track" height="260"></canvas></div>';
+  html+='<div id="coxBox"></div><div class="card"><h2>Course</h2><canvas id="track" height="260"></canvas></div>';
   html+='<button class="big" id="exCsv">Export CSV (spreadsheet)</button><button class="big alt" id="exGpx">Export GPX (Strava / maps)</button><button class="big red" id="delS" style="margin-bottom:30px">Delete Session</button>';
   $('dBody').innerHTML=html; $('dBody').scrollTop=0;
   drawChart($('chart'), smp); drawTrack($('track'), smp);
+  if(window.COX) COX.detail(id, sm, data);
   $('exCsv').onclick=()=>exportFile(sm, data, 'csv'); $('exGpx').onclick=()=>exportFile(sm, data, 'gpx');
-  $('delS').onclick=()=>{ if(!confirm(SYNC.on ? 'Delete this session from this phone and the backup?' : 'Delete this session?')) return; LS.del('sp_s_'+id); LS.set('sp_index', LS.get('sp_index',[]).filter(x=>x.id!==id));
+  $('delS').onclick=()=>{ if(!confirm(SYNC.on ? 'Delete this session from this phone and the backup?' : 'Delete this session?')) return; if(window.COX) COX.deleteLocal(id); LS.del('sp_s_'+id); LS.set('sp_index', LS.get('sp_index',[]).filter(x=>x.id!==id));
     if(sm.synced){ const d=LS.get('sp_deleted',[]); d.push(id); LS.set('sp_deleted',d); syncNow(); } go('history'); };
 }
 const stat=(k,v)=>'<div class="stat"><div class="k">'+k+'</div><div class="v">'+v+'</div></div>';
@@ -712,6 +719,7 @@ async function api(path, body){
   if(!r.ok) throw new Error('http '+r.status); return r.json();
 }
 async function syncNow(){
+  if(location.hash.startsWith('#coach=')) return;
   if(!SYNC.on || syncBusy || run || !navigator.onLine || location.protocol!=='https:') return;
   syncBusy=true;
   try{
@@ -721,6 +729,7 @@ async function syncNow(){
     for(const s of idx){ if(s.synced) continue; const data=LS.get('sp_s_'+s.id,null); if(!data){ continue; }
       const sum=Object.assign({},s); delete sum.synced;
       await api('put',{ id:s.id, summary:sum, data }); s.synced=true; LS.set('sp_index', idx); n++; }
+    if(window.COX) await COX.syncAudio();
     syncMsg = n ? 'Backed up '+n+' new session'+(n>1?'s':'')+' just now.' : 'All sessions backed up.';
   }catch(e){ syncMsg='Backup waiting for a connection — it will retry.'; }
   syncBusy=false; if($('scr-settings').classList.contains('on')) renderBackup();
@@ -751,7 +760,7 @@ $('bkCopy').onclick=async()=>{ try{ await navigator.clipboard.writeText(SYNC.key
 $('bkRestore').onclick=()=>restoreFrom($('bkIn').value);
 window.addEventListener('online', ()=>syncNow());
 document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') syncNow(); });
-setTimeout(syncNow, 3000);
+setTimeout(()=>{ if(!location.hash.startsWith('#coach=')) syncNow(); }, 3000);
 
 /* ---------- crash recovery ---------- */
 function checkRecovery(){
@@ -761,8 +770,9 @@ function checkRecovery(){
 }
 
 /* ---------- boot ---------- */
-applyGlare(); buildFields(); renderControls(); renderLive(); checkRecovery();
-startGPS(); // warm up GPS so it's locked by the time you push off
+const COACH_VIEW = location.hash.startsWith('#coach=');
+applyGlare(); buildFields(); renderControls(); renderLive();
+if(!COACH_VIEW){ checkRecovery(); startGPS(); } // warm up GPS so it's locked by the time you push off
 window.addEventListener('beforeunload', saveLive);
 /* ---------- updates ---------- */
 const APP_BUILD='__BUILD__', APP_LABEL='__LABEL__';
@@ -782,5 +792,6 @@ if('serviceWorker' in navigator && location.protocol==='https:'){
 setInterval(()=>{ if(swWaiting) $('upd').classList.toggle('on', !run); }, 1000);
 window.__SP = { processAccel, strokeEvent, mot, S, handleFix, gps }; // test hook
 </script>
+<script src="/cox.js?v=__BUILD__"></script>
 </body>
 </html>

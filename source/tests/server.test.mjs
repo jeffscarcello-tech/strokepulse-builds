@@ -8,7 +8,7 @@ const buildTxt = fs.readFileSync(new URL('build.txt', dist), 'utf8');
 function fakeD1() {
   const s = new DatabaseSync(':memory:');
   const stmt = (sql, args = []) => ({
-    bind: (...a) => stmt(sql, a),
+    bind: (...a) => stmt(sql, a.map(x => x instanceof ArrayBuffer ? new Uint8Array(x) : x)),
     run: async () => { s.prepare(sql).run(...args); return {}; },
     first: async () => s.prepare(sql).get(...args) ?? null,
     all: async () => ({ results: s.prepare(sql).all(...args) }),
@@ -69,4 +69,52 @@ console.log('ALL SERVER TESTS PASSED');
   // raw key never stored
   const rows = await db.prepare('SELECT k FROM sessions').all(); assert.ok(!rows.results.some(r => r.k.includes('ABCD')));
   console.log('BACKUP TESTS PASSED');
+}
+
+// ---- Cox mode: recordings, transcripts, coach link ----
+{
+  const KEY = 'COXX-ABCD-EFGH-JKMN-PQRS';
+  const waits = [];
+  const ctx = { waitUntil: p => waits.push(p) };
+  env.AI = { run: async (model, inp) => { assert.equal(model, '@cf/openai/whisper-large-v3-turbo'); assert.ok(inp.audio.length > 100); return { text: 'Power ten now', segments: [{ start: 1.5, end: 3.2, text: ' Power ten now' }, { start: 10, end: 11, text: 'Legs' }] }; } };
+  const req = (path, opt = {}) => loader.fetch(new Request('https://x' + path, opt), env, ctx);
+  const audio = new Uint8Array(4000).map((_, i) => i % 251);
+  let r = await req('/api/sync/put', { method: 'POST', headers: { 'X-Sync-Key': KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ id: 500, summary: { start: 1, cox: true }, data: { samples: [], cox: { rec: 'r1' } } }) });
+  assert.equal(r.status, 200);
+  r = await req('/api/cox/audio?sid=500&idx=0&t0=-2.5&dur=60', { method: 'POST', headers: { 'X-Sync-Key': KEY, 'Content-Type': 'audio/mp4' }, body: audio });
+  assert.equal(r.status, 200); await Promise.all(waits);
+  let c = await (await req('/api/cox/chunks?sid=500', { headers: { 'X-Sync-Key': KEY } })).json();
+  assert.equal(c.chunks.length, 1); assert.equal(c.chunks[0].status, 'done'); assert.equal(c.chunks[0].t0, -2.5); assert.equal(c.chunks[0].tx[0].t, 'Power ten now');
+  r = await req('/api/cox/audio?sid=500&idx=0', { headers: { 'X-Sync-Key': KEY } });
+  assert.equal(r.headers.get('content-type'), 'audio/mp4'); assert.equal((await r.arrayBuffer()).byteLength, 4000);
+  // crew cannot read without the link
+  assert.equal((await req('/api/cox/chunks?sid=500')).status, 400);
+  // coach link
+  let t = await (await req('/api/cox/share', { method: 'POST', headers: { 'X-Sync-Key': KEY } })).json();
+  assert.match(t.token, /^[a-z0-9]{32}$/);
+  const CT = { 'X-Coach-Token': t.token };
+  let l = await (await req('/api/sync/list', { headers: CT })).json(); assert.equal(l.sessions[0].id, 500);
+  c = await (await req('/api/cox/chunks?sid=500', { headers: CT })).json(); assert.equal(c.chunks.length, 1);
+  assert.equal((await req('/api/cox/audio?sid=500&idx=0', { headers: CT })).status, 200);
+  // coach is read-only
+  assert.equal((await req('/api/sync/put', { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, CT), body: '{"id":9,"summary":{},"data":{}}' })).status, 403);
+  assert.equal((await req('/api/cox/audio?sid=500&idx=1&t0=0&dur=1', { method: 'POST', headers: Object.assign({ 'Content-Type': 'audio/mp4' }, CT), body: audio })).status, 403);
+  assert.equal((await req('/api/cox/share', { method: 'POST', headers: CT })).status, 403);
+  // reset link: old token stops working
+  const t2 = await (await req('/api/cox/share', { method: 'POST', headers: { 'X-Sync-Key': KEY } })).json();
+  assert.notEqual(t2.token, t.token); assert.equal((await req('/api/sync/list', { headers: CT })).status, 400);
+  // AI failure is recorded, not fatal
+  env.AI = { run: async () => { throw new Error('boom'); } };
+  waits.length = 0;
+  await req('/api/cox/audio?sid=500&idx=1&t0=58&dur=60', { method: 'POST', headers: { 'X-Sync-Key': KEY, 'Content-Type': 'audio/mp4' }, body: audio }); await Promise.all(waits);
+  c = await (await req('/api/cox/chunks?sid=500', { headers: { 'X-Sync-Key': KEY } })).json(); assert.equal(c.chunks[1].status, 'error');
+  // bad inputs
+  assert.equal((await req('/api/cox/audio?sid=500&idx=2&t0=0&dur=1', { method: 'POST', headers: { 'X-Sync-Key': KEY, 'Content-Type': 'text/html' }, body: audio })).status, 400);
+  assert.equal((await req('/api/cox/audio?sid=500&idx=2&t0=0&dur=1', { method: 'POST', headers: { 'X-Sync-Key': KEY, 'Content-Type': 'audio/mp4' }, body: new Uint8Array(10) })).status, 400);
+  // deleting the session removes its audio
+  await req('/api/sync/del', { method: 'POST', headers: { 'X-Sync-Key': KEY, 'Content-Type': 'application/json' }, body: '{"id":500}' });
+  c = await (await req('/api/cox/chunks?sid=500', { headers: { 'X-Sync-Key': KEY } })).json(); assert.equal(c.chunks.length, 0);
+  // live endpoint needs a websocket upgrade
+  assert.equal((await req('/api/live?key=' + KEY)).status, 426);
+  console.log('COX SERVER TESTS PASSED');
 }

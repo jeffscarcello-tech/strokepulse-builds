@@ -20,7 +20,8 @@ manifest = json.dumps({ 'name': 'StrokePulse', 'short_name': 'StrokePulse', 'sta
              {'src': f'/icon-512.png?v={build}', 'sizes': '512x512', 'type': 'image/png', 'purpose': 'any maskable'} ] })
 assert '__BUILD__' not in html and '__LABEL__' not in html
 app = { 'app': 'strokepulse', 'build': build, 'label': label, 'html': html, 'sw': sw, 'manifest': manifest, 'icon_svg': svg,
-        'i192': png(192), 'i512': png(512, True), 'apple': png(180, True), 'files': {} }
+        'i192': png(192), 'i512': png(512, True), 'apple': png(180, True),
+        'files': { '/cox.js': { 'type': 'application/javascript; charset=utf-8', 'b64': base64.b64encode(sub(open(os.path.join(here, 'cox.js')).read()).encode()).decode() } } }
 json.dump(app, open(os.path.join(out, 'app.json'), 'w'))
 open(os.path.join(out, 'build.txt'), 'w').write(build + '\n')
 print('built', build, label, len(json.dumps(app)), 'bytes')
