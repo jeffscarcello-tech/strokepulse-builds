@@ -1,6 +1,6 @@
 // StrokePulse site Worker (loader) — serves the app installed in D1 by strokepulse-updater,
 // plus cloud backup, Cox mode recordings/transcripts, private coach links, and the live coach relay.
-const LOADER = 'l3';
+const LOADER = 'l4';
 let appCache = null, appChecked = 0;
 async function ensure(db) {
   await db.prepare('CREATE TABLE IF NOT EXISTS appmeta (k TEXT PRIMARY KEY, v TEXT NOT NULL)').run();
@@ -62,6 +62,7 @@ async function sync(request, env, op, url) {
   if (!Number.isSafeInteger(id) || id <= 0) return json({ error: 'bad_id' }, 400);
   if (op === 'del') {
     await db.batch([db.prepare('DELETE FROM sessions WHERE k = ?1 AND id = ?2').bind(k, id), db.prepare('DELETE FROM cox_audio WHERE k = ?1 AND sid = ?2').bind(k, id)]);
+    await deleteAudio(env, k, id);
     return json({ ok: true });
   }
   if (op === 'put') {
@@ -74,15 +75,28 @@ async function sync(request, env, op, url) {
   return json({ error: 'unknown' }, 404);
 }
 
-/* ---------- Cox mode: recordings + transcripts ---------- */
+/* ---------- Cox mode: recordings + transcripts ----------
+   Audio lives in R2 (binding AUDIO, key k/sid/idx) when bound; D1 keeps the metadata and transcript.
+   Older rows that still hold audio in D1 keep working. */
+const akey = (k, sid, idx) => k + '/' + sid + '/' + idx;
+async function getAudioBytes(env, k, sid, idx, row) {
+  if (row && row.audio) return toBytes(row.audio);
+  if (!env.AUDIO) return null;
+  const o = await env.AUDIO.get(akey(k, sid, idx)); return o ? new Uint8Array(await o.arrayBuffer()) : null;
+}
+async function deleteAudio(env, k, sid) {
+  if (!env.AUDIO) return;
+  let cursor; do { const l = await env.AUDIO.list({ prefix: k + '/' + sid + '/', cursor }); if (l.objects.length) await env.AUDIO.delete(l.objects.map(o => o.key)); cursor = l.truncated ? l.cursor : null; } while (cursor);
+}
 const PROMPT = 'Rowing coxswain calls: sit ready, attention, row, power ten, legs, catch, finish, swing, ratio, rate up two, settle, lengthen, weigh enough, hold water, port, starboard, bow pair, stern pair, seat, five hundred to go, sprint.';
 async function transcribe(env, k, sid, idx) {
   const db = env.DB;
   const row = await db.prepare('SELECT audio, mime FROM cox_audio WHERE k = ?1 AND sid = ?2 AND idx = ?3').bind(k, sid, idx).first();
-  if (!row || !row.audio) return 'missing';
+  const bytes = row ? await getAudioBytes(env, k, sid, idx, row) : null;
+  if (!bytes) return 'missing';
   if (!env.AI) { await db.prepare("UPDATE cox_audio SET status = 'no_ai' WHERE k = ?1 AND sid = ?2 AND idx = ?3").bind(k, sid, idx).run(); return 'no_ai'; }
   try {
-    const r = await env.AI.run('@cf/openai/whisper-large-v3-turbo', { audio: b64(row.audio), initial_prompt: PROMPT, vad_filter: true, language: 'en' });
+    const r = await env.AI.run('@cf/openai/whisper-large-v3-turbo', { audio: b64(bytes), initial_prompt: PROMPT, vad_filter: true, language: 'en' });
     const segs = ((r && r.segments) || []).map(s => ({ s: +(+s.start).toFixed(2), e: +(+s.end).toFixed(2), t: String(s.text || '').trim() })).filter(s => s.t);
     await db.prepare("UPDATE cox_audio SET status = 'done', tx = ?4, updated = ?5 WHERE k = ?1 AND sid = ?2 AND idx = ?3").bind(k, sid, idx, JSON.stringify(segs), Date.now()).run();
     return 'done';
@@ -103,8 +117,9 @@ async function cox(request, env, ctx, op, url) {
   }
   if (op === 'audio' && request.method === 'GET') {
     const r = await db.prepare('SELECT audio, mime FROM cox_audio WHERE k = ?1 AND sid = ?2 AND idx = ?3').bind(k, sid, idx).first();
-    if (!r || !r.audio) return json({ error: 'not_found' }, 404);
-    return new Response(toBytes(r.audio), { headers: { 'Content-Type': r.mime, 'Cache-Control': 'private, max-age=86400' } });
+    const bytes = r ? await getAudioBytes(env, k, sid, idx, r) : null;
+    if (!bytes) return json({ error: 'not_found' }, 404);
+    return new Response(bytes, { headers: { 'Content-Type': r.mime, 'Cache-Control': 'private, max-age=86400' } });
   }
   if (op === 'share') {   // the cox manages the private coach link
     if (me.role !== 'cox') return json({ error: 'read_only' }, 403);
@@ -125,7 +140,8 @@ async function cox(request, env, ctx, op, url) {
     const buf = await request.arrayBuffer();
     if (buf.byteLength > MAX_AUDIO) return json({ error: 'too_big' }, 413);
     if (buf.byteLength < 200) return json({ error: 'empty' }, 400);
-    await db.prepare("INSERT OR REPLACE INTO cox_audio (k, sid, idx, t0, dur, mime, audio, status, tx, updated) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'new', NULL, ?8)").bind(k, sid, idx, t0, dur, mime, buf, Date.now()).run();
+    if (env.AUDIO) await env.AUDIO.put(akey(k, sid, idx), buf, { httpMetadata: { contentType: mime } });
+    await db.prepare("INSERT OR REPLACE INTO cox_audio (k, sid, idx, t0, dur, mime, audio, status, tx, updated) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'new', NULL, ?8)").bind(k, sid, idx, t0, dur, mime, env.AUDIO ? null : buf, Date.now()).run();
     ctx.waitUntil(transcribe(env, k, sid, idx));
     return json({ ok: true });
   }
@@ -229,7 +245,7 @@ export default {
     const app = await loadApp(env.DB);
     if (p === '/api/health') {
       const g = await env.DB.prepare("SELECT v FROM appmeta WHERE k = 'ghlast'").first().catch(() => null);
-      return res(JSON.stringify({ ok: !!app, app: 'strokepulse', build: app ? app.build : null, label: app ? app.label : null, loader: LOADER, ai: !!env.AI, live: !!env.LIVE, updater: g ? JSON.parse(g.v) : null }, null, 2), 'application/json', { 'Cache-Control': 'no-store' });
+      return res(JSON.stringify({ ok: !!app, app: 'strokepulse', build: app ? app.build : null, label: app ? app.label : null, loader: LOADER, ai: !!env.AI, live: !!env.LIVE, r2: !!env.AUDIO, updater: g ? JSON.parse(g.v) : null }, null, 2), 'application/json', { 'Cache-Control': 'no-store' });
     }
     if (!app) return res('<!doctype html><meta name=viewport content="width=device-width,initial-scale=1"><body style="font-family:-apple-system,sans-serif;text-align:center;padding:60px 20px;background:#05070a;color:#fff"><h2>StrokePulse</h2><p>Almost ready — the first version is being installed. Try again in a minute.</p>', 'text/html; charset=utf-8');
     if (p === '/' || p === '/index.html') return res(app.html, 'text/html; charset=utf-8');

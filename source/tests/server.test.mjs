@@ -24,6 +24,14 @@ globalThis.fetch = async url => {
 const updater = (await import('../workers/updater.js')).default;
 const loader = (await import('../workers/loader.js')).default;
 const db = fakeD1(), env = { TEST_DB: db, DB: db };
+if (process.env.R2 === '1') {   // R2 MODE: a fake bucket
+  const store = new Map();
+  env.AUDIO = { put: async (k, v) => { store.set(k, new Uint8Array(v instanceof ArrayBuffer ? v : await new Response(v).arrayBuffer())); },
+    get: async k => store.has(k) ? { arrayBuffer: async () => store.get(k).buffer.slice(0) } : null,
+    list: async ({ prefix }) => ({ objects: [...store.keys()].filter(k => k.startsWith(prefix)).map(key => ({ key })), truncated: false }),
+    delete: async keys => { for (const k of [].concat(keys)) store.delete(k); } };
+  globalThis.__r2 = store;
+}
 // before install
 let r = await loader.fetch(new Request('https://x/'), env); assert.match(await r.text(), /Almost ready/);
 const tasks = []; await updater.scheduled({}, env, { waitUntil: p => tasks.push(p) }); await Promise.all(tasks);
@@ -116,5 +124,6 @@ console.log('ALL SERVER TESTS PASSED');
   c = await (await req('/api/cox/chunks?sid=500', { headers: { 'X-Sync-Key': KEY } })).json(); assert.equal(c.chunks.length, 0);
   // live endpoint needs a websocket upgrade
   assert.equal((await req('/api/live?key=' + KEY)).status, 426);
-  console.log('COX SERVER TESTS PASSED');
+  if (process.env.R2 === '1') { assert.equal(globalThis.__r2.size, 0, 'session delete removes R2 audio'); const row = await db.prepare('SELECT COUNT(*) AS n FROM cox_audio WHERE audio IS NOT NULL').first(); assert.equal(row.n, 0, 'no audio bytes in D1'); }
+  console.log('COX SERVER TESTS PASSED' + (process.env.R2 === '1' ? ' (R2 storage)' : ' (D1 storage)'));
 }
