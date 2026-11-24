@@ -1,9 +1,49 @@
 // StrokePulse site Worker (loader) — serves the app installed in D1 by strokepulse-updater.
-const LOADER = 'l1';
+const LOADER = 'l2';
 let appCache = null, appChecked = 0;
 async function ensure(db) {
   await db.prepare('CREATE TABLE IF NOT EXISTS appmeta (k TEXT PRIMARY KEY, v TEXT NOT NULL)').run();
   await db.prepare('CREATE TABLE IF NOT EXISTS apppart (ver TEXT NOT NULL, i INTEGER NOT NULL, d TEXT NOT NULL, PRIMARY KEY (ver, i))').run();
+}
+/* ---------- cloud backup (per backup code; the code itself is never stored, only its SHA-256) ---------- */
+const KEY_RE = /^[A-Z2-9]{4}(-[A-Z2-9]{4}){4}$/;
+const MAX_BODY = 1900000, MAX_SESSIONS = 5000;
+let syncReady = false;
+async function ensureSync(db) {
+  if (syncReady) return;
+  await db.prepare('CREATE TABLE IF NOT EXISTS sessions (k TEXT NOT NULL, id INTEGER NOT NULL, summary TEXT NOT NULL, data TEXT NOT NULL, updated INTEGER NOT NULL, PRIMARY KEY (k, id))').run();
+  syncReady = true;
+}
+const json = (o, status) => new Response(JSON.stringify(o), { status: status || 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+async function hashKey(key) { return [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode('strokepulse:' + key)))].map(b => b.toString(16).padStart(2, '0')).join(''); }
+async function sync(request, env, op) {
+  const key = request.headers.get('X-Sync-Key') || '';
+  if (!KEY_RE.test(key)) return json({ error: 'bad_key' }, 400);
+  const db = env.DB; await ensureSync(db); const k = await hashKey(key);
+  if (op === 'list' && request.method === 'GET') {
+    const rows = (await db.prepare('SELECT id, summary FROM sessions WHERE k = ?1 ORDER BY id DESC').bind(k).all()).results || [];
+    return json({ sessions: rows.map(r => ({ id: r.id, summary: JSON.parse(r.summary) })) });
+  }
+  if (op === 'get' && request.method === 'GET') {
+    const id = parseInt(new URL(request.url).searchParams.get('id'), 10);
+    const r = await db.prepare('SELECT data FROM sessions WHERE k = ?1 AND id = ?2').bind(k, id).first();
+    return r ? json({ data: JSON.parse(r.data) }) : json({ error: 'not_found' }, 404);
+  }
+  if (request.method !== 'POST') return json({ error: 'method' }, 405);
+  const raw = await request.text();
+  if (raw.length > MAX_BODY) return json({ error: 'too_big' }, 413);
+  let b; try { b = JSON.parse(raw); } catch (e) { return json({ error: 'bad_json' }, 400); }
+  const id = Number(b && b.id);
+  if (!Number.isSafeInteger(id) || id <= 0) return json({ error: 'bad_id' }, 400);
+  if (op === 'del') { await db.prepare('DELETE FROM sessions WHERE k = ?1 AND id = ?2').bind(k, id).run(); return json({ ok: true }); }
+  if (op === 'put') {
+    if (!b.summary || typeof b.summary !== 'object' || !b.data || typeof b.data !== 'object') return json({ error: 'bad_session' }, 400);
+    const exists = await db.prepare('SELECT 1 FROM sessions WHERE k = ?1 AND id = ?2').bind(k, id).first();
+    if (!exists) { const c = await db.prepare('SELECT COUNT(*) AS n FROM sessions WHERE k = ?1').bind(k).first(); if (c && c.n >= MAX_SESSIONS) return json({ error: 'full' }, 507); }
+    await db.prepare('INSERT OR REPLACE INTO sessions (k, id, summary, data, updated) VALUES (?1, ?2, ?3, ?4, ?5)').bind(k, id, JSON.stringify(b.summary), JSON.stringify(b.data), Date.now()).run();
+    return json({ ok: true });
+  }
+  return json({ error: 'unknown' }, 404);
 }
 async function loadApp(db) {
   if (appCache && Date.now() - appChecked < 15000) return appCache;
@@ -43,6 +83,7 @@ async function adminInstall(request, env) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url), p = url.pathname;
+    if (p.startsWith('/api/sync/')) return sync(request, env, p.slice(10));
     if (p === '/admin') return request.method === 'POST' ? adminInstall(request, env) : res(ADMIN_PAGE, 'text/html; charset=utf-8');
     const app = await loadApp(env.DB);
     if (p === '/api/health') {

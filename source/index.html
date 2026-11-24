@@ -14,7 +14,11 @@
 <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=__BUILD__">
 <style>
 :root{--bg:#05070a;--panel:#10151c;--line:#1f2833;--fg:#f4f7fa;--dim:#8a97a6;--acc:#2f9bff;--good:#2ed47a;--warn:#ffb020;--bad:#ff4d4f;}
-body.glare{--bg:#ffffff;--panel:#f1f3f5;--line:#c9d0d6;--fg:#000;--dim:#3d4752;--acc:#0057c2;}
+body.glare{--bg:#ffffff;--panel:#f1f3f5;--line:#c9d0d6;--fg:#000;--dim:#3d4752;--acc:#0057c2;--okbg:#c8f5da;--offbg:#ffd0d0;}
+body.night{--bg:#000;--panel:#140303;--line:#2a0808;--fg:#ff453a;--dim:#9c2a22;--acc:#a8231b;--good:#7d1a14;--warn:#6e1812;--bad:#a8231b;--okbg:#000;--offbg:#3a0705;}
+body.night .btn-go,body.night .btn-lap,body.night .btn-stop,body.night .big,body.night .banner{color:#ffb3ad!important}
+body.night .seg button.on{color:#ffd0cc}
+:root{--okbg:#0d3b22;--offbg:#4a1010}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0}
 button{-webkit-touch-callout:none}
 html,body{height:100%;background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display",Helvetica,Arial,sans-serif;overscroll-behavior:none;-webkit-user-select:none;user-select:none}
@@ -35,9 +39,13 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
 .f.wide{grid-column:span 2}
 .f .lab{position:absolute;top:6px;left:10px;font-size:13px;font-weight:700;letter-spacing:1px;color:var(--dim);text-transform:uppercase}
 .f .unit{position:absolute;top:6px;right:10px;font-size:13px;color:var(--dim)}
+.f.ok{background:var(--okbg)}.f.off{background:var(--offbg)}
+.f .tag{position:absolute;bottom:6px;right:10px;font-size:14px;font-weight:800;letter-spacing:1px;color:var(--fg)}
 .f .val{font-variant-numeric:tabular-nums;font-weight:800;line-height:1;letter-spacing:-1px;white-space:nowrap}
 .f.wide .val{font-size:min(22vw,13vh)}
 .f:not(.wide) .val{font-size:min(12vw,7.5vh)}
+.fields.l3 .f.wide .val{font-size:min(25vw,19vh)}
+.fields.l4 .f.wide .val{font-size:min(24vw,15vh)}.fields.l4 .f:not(.wide) .val{font-size:min(13vw,10vh)}
 .banner{display:none;background:var(--acc);color:#fff;text-align:center;font-weight:800;padding:8px;font-size:20px}
 .banner.rest{background:var(--warn);color:#000}.banner.done{background:var(--good);color:#000}
 .controls{display:flex;gap:8px;padding:10px}
@@ -60,6 +68,10 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
 .big{width:100%;height:56px;border-radius:12px;font-size:19px;font-weight:800;background:var(--acc);color:#fff;margin-top:6px}
 .big.alt{background:var(--panel);color:var(--fg);border:1px solid var(--line)}
 .big.red{background:var(--bad)}
+input[type=text].mini{width:74px;padding:9px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font-size:17px;text-align:center}
+.code{font-family:ui-monospace,Menlo,monospace;font-size:19px;font-weight:700;letter-spacing:1px;user-select:all;-webkit-user-select:all}
+input.codein{width:100%;padding:11px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font-size:17px;font-family:ui-monospace,Menlo,monospace;text-transform:uppercase;margin-top:8px}
+.row .two{display:flex;align-items:center;gap:6px}
 input[type=number]{width:90px;padding:9px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font-size:17px;text-align:center}
 .list .item{display:block;width:100%;text-align:left;background:var(--panel);border-radius:12px;padding:14px;margin-bottom:10px}
 .item .t1{font-weight:700;font-size:17px}.item .t2{color:var(--dim);font-size:14px;margin-top:4px}
@@ -111,6 +123,13 @@ canvas{width:100%;display:block;border-radius:8px;background:var(--bg)}
         <div class="row"><span>Rest (seconds)</span><input type="number" id="wkRest" min="0"></div>
         <p class="muted" id="wkSummary" style="padding-top:8px"></p>
       </div>
+      <div class="row"><span>Start recording</span><div class="seg" id="wkAuto"><button data-v="0">On START</button><button data-v="1">On 1st strokes</button></div></div>
+    </div>
+    <div class="card"><h2>Targets (optional)</h2>
+      <div class="row"><span>Stroke rate</span><div class="two"><input type="number" id="tRlo" placeholder="min" min="10" max="60"> – <input type="number" id="tRhi" placeholder="max" min="10" max="60"></div></div>
+      <div class="row"><span>Split</span><div class="two"><input type="text" class="mini" id="tSfast" placeholder="1:55" inputmode="decimal"> – <input type="text" class="mini" id="tSslow" placeholder="2:05" inputmode="decimal"></div></div>
+      <p class="muted" style="padding-top:8px">The Rate and Split boxes turn green when you're on target and red when you're off, with LOW / HIGH or SLOW / FAST as a reminder. Leave blank to turn off.</p>
+      <button class="big alt" id="tClear" style="height:44px;font-size:16px">Clear targets</button>
     </div>
     <button class="big" data-go="history">Session History</button>
     <button class="big alt" data-go="settings">Settings</button>
@@ -129,15 +148,26 @@ canvas{width:100%;display:block;border-radius:8px;background:var(--bg)}
       <div class="row"><span>Distance / speed</span><div class="seg" data-set="units"><button data-v="metric">Metric</button><button data-v="imperial">Imperial</button></div></div>
     </div>
     <div class="card"><h2>Sensors</h2>
-      <div class="row"><span>Speed smoothing</span><div class="seg" data-set="smooth"><button data-v="0">Off</button><button data-v="2">2 s</button><button data-v="5">5 s</button><button data-v="10">10 s</button></div></div>
+      <div class="row"><span>Split averaging</span><div class="seg" data-set="smooth"><button data-v="st3">3 strokes</button><button data-v="st5">5 strokes</button><button data-v="2">2 s</button><button data-v="5">5 s</button><button data-v="0">Off</button></div></div>
       <div class="row"><span>Stroke sensitivity</span><div class="seg" data-set="sens"><button data-v="0.7">Low</button><button data-v="1">Med</button><button data-v="1.4">High</button></div></div>
       <div class="row"><span>Ignore GPS worse than</span><div class="seg" data-set="maxAcc"><button data-v="15">15 m</button><button data-v="30">30 m</button><button data-v="60">60 m</button></div></div>
       <p class="muted" style="padding-top:8px">Stroke rate comes from the phone's motion sensor, so mount the phone firmly to the boat. If the rate skips strokes, raise sensitivity; if it double-counts, lower it.</p>
     </div>
     <div class="card"><h2>Display &amp; Sound</h2>
-      <div class="row"><span>Bright mode (white screen for sun) — also the ☀︎ button</span><div class="seg" data-set="glare"><button data-v="0">Off</button><button data-v="1">On</button></div></div>
+      <div class="row"><span>Screen (also the ☀︎ button)</span><div class="seg" data-set="theme"><button data-v="dark">Dark</button><button data-v="bright">Bright</button><button data-v="night">Night</button></div></div>
+      <div class="row"><span>Boxes on main screen</span><div class="seg" data-set="layout"><button data-v="3">3</button><button data-v="4">4</button><button data-v="6">6</button></div></div>
       <div class="row"><span>Beeps (intervals)</span><div class="seg" data-set="sound"><button data-v="1">On</button><button data-v="0">Off</button></div></div>
       <div class="row"><span>Demo mode (fake boat, for testing on land)</span><div class="seg" data-set="demo"><button data-v="0">Off</button><button data-v="1">On</button></div></div>
+    </div>
+    <div class="card"><h2>Cloud Backup</h2>
+      <div class="row"><span>Back up sessions</span><div class="seg" id="bkOn"><button data-v="1">On</button><button data-v="0">Off</button></div></div>
+      <p class="muted" id="bkStatus" style="padding:8px 0"></p>
+      <p class="muted">Your backup code (keep it private — it unlocks your sessions):</p>
+      <p class="code" id="bkCode" style="padding:6px 0"></p>
+      <button class="big alt" id="bkCopy" style="height:44px;font-size:16px">Copy code</button>
+      <p class="muted" style="padding-top:14px">On a new phone or a computer, enter your code to bring all your sessions over:</p>
+      <input class="codein" id="bkIn" placeholder="XXXX-XXXX-XXXX-XXXX-XXXX" autocomplete="off" autocapitalize="characters">
+      <button class="big" id="bkRestore" style="height:48px;font-size:17px">Restore from code</button>
     </div>
   </div>
 </section>
@@ -165,7 +195,9 @@ canvas{width:100%;display:block;border-radius:8px;background:var(--bg)}
     <p><b>5. Wait for green GPS.</b> Give it 20–60 seconds outside before starting. Green = under 10 m accuracy.</p><br>
     <p><b>6. Battery.</b> Screen-on GPS uses roughly 15–25% per hour. Tap ☀︎ on the main screen for Bright mode in direct sun.</p><br>
     <p><b>Stopping:</b> tap STOP, then tap END &amp; SAVE. If you don't confirm within 5 seconds, it keeps recording, so a splash can't end your session.</p><br>
-    <p><b>Fields:</b> tap any number on the live screen to choose what it shows.</p><br>
+    <p><b>Fields:</b> tap any number on the live screen to choose what it shows. Settings › Boxes picks 3, 4 or 6 boxes (fewer = bigger numbers).</p><br>
+    <p><b>☀︎ button:</b> cycles Dark (indoor/cloudy) → Bright (direct sun) → Night (dim red for dark mornings).</p><br>
+    <p><b>Backup:</b> sessions back up automatically when you have signal. Your backup code is in Settings — save it somewhere safe.</p><br>
     <p>Version <b>v__LABEL__</b> (build __BUILD__)</p>
   </div></div>
 </section>
@@ -182,11 +214,13 @@ const LS = {
   set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); return true; }catch(e){ toast('Storage full — delete old sessions'); return false; } },
   del(k){ try{ localStorage.removeItem(k); }catch(e){} }
 };
-const DEF = { sport:'row', splitBase:'500', units:'metric', smooth:'2', sens:'1', maxAcc:'30', glare:'0', sound:'1', demo:'0',
+const DEF = { sport:'row', splitBase:'500', units:'metric', smooth:'st3', sens:'1', maxAcc:'30', theme:'dark', layout:'6', sound:'1', demo:'0',
   fields:['split','rate','dist','time','dps','avgSplit'],
-  wk:{ mode:'justgo', reps:4, type:'dist', val:1000, rest:120 } };
+  wk:{ mode:'justgo', reps:4, type:'dist', val:1000, rest:120, auto:'0', tr:[null,null], ts:[null,null] } };
 const S = Object.assign({}, DEF, LS.get('sp_settings', {}));
 S.wk = Object.assign({}, DEF.wk, S.wk||{});
+if(!S.m15){ if(S.smooth==='2') S.smooth='st3'; S.m15=1; }
+if(S.glare!==undefined){ if(!LS.get('sp_settings',{}).theme) S.theme = S.glare==='1' ? 'bright' : 'dark'; delete S.glare; }
 if(!Array.isArray(S.fields) || S.fields.length!==6) S.fields = DEF.fields.slice();
 const saveSettings = () => LS.set('sp_settings', S);
 
@@ -221,7 +255,7 @@ async function keepAwake(){ try{ if('wakeLock' in navigator && !wakeLock){ wakeL
 document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible' && run) keepAwake(); if(document.visibilityState==='hidden' && run) saveLive(); });
 
 /* ---------- GPS ---------- */
-const gps = { watch:null, acc:null, lastFix:0, lastGood:0, prev:null, rawV:0, v:0, lat:null, lon:null, lastT:0 };
+const gps = { hist:[], watch:null, acc:null, lastFix:0, lastGood:0, prev:null, rawV:0, v:0, lat:null, lon:null, lastT:0 };
 function startGPS(){
   if(gps.watch!=null) return;
   if(!('geolocation' in navigator)){ toast('No GPS available'); return; }
@@ -240,20 +274,28 @@ function handleFix(lat, lon, acc, speed, ts){
   if(v==null) v=0;
   if(v>12) v=gps.rawV; // reject glitch (>43 km/h)
   // distance: integrate speed (smooth, no stationary drift); fall back to geometry if speed missing
-  if(run && gps.prev && dt>0 && dt<10){
+  gps.hist.push([Date.now(), v]); while(gps.hist.length && Date.now()-gps.hist[0][0]>120000) gps.hist.shift();
+  if(run && !run.armed && gps.prev && dt>0 && dt<10){
     const step = (speed!=null && speed>=0) ? (v+gps.rawV)/2*dt : (v>0.4 ? d : 0);
     run.dist += step;
-  } else if(run && gps.prev && dt>=10 && dt<180 && d/dt<8){
+  } else if(run && !run.armed && gps.prev && dt>=10 && dt<180 && d/dt<8){
     run.dist += d; // signal dropped (bridge, trees): bridge the gap with the straight-line distance
   }
   gps.rawV=v;
-  const tau=+S.smooth; const a = tau>0 && dt>0 ? Math.min(1, dt/(tau+dt)) : 1;
+  const tau = S.smooth.startsWith('st') ? 2 : +S.smooth; const a = tau>0 && dt>0 ? Math.min(1, dt/(tau+dt)) : 1;
   gps.v = gps.v + a*(v-gps.v);
   gps.lat=lat; gps.lon=lon; gps.prev=cur;
 }
 
 /* current speed; drops to 0 if GPS has gone quiet so the split never freezes on an old number */
-const curV = () => (Date.now()-gps.lastGood > 5000 ? 0 : gps.v);
+const strokeWall=[];
+function strokeAvgV(n){
+  const L=strokeWall.length; if(L<n+1 || Date.now()-strokeWall[L-1]>6000) return gps.v;
+  const t0=strokeWall[L-1-n]; let sum=0, c=0;
+  for(let i=gps.hist.length-1;i>=0 && gps.hist[i][0]>=t0;i--){ sum+=gps.hist[i][1]; c++; }
+  return c ? sum/c : gps.v;
+}
+const curV = () => (Date.now()-gps.lastGood > 5000 ? 0 : (S.smooth.startsWith('st') ? strokeAvgV(+S.smooth.slice(2)) : gps.v));
 
 /* ---------- stroke rate (motion sensor) ---------- */
 const mot = { on:false, last:0, g:[0,0,0], gInit:false, lp:[0,0,0], dc:[0,0,0], C:[1e-3,0,0, 0,1e-3,0, 0,0,1e-3], ax:[1,0,0], rms2:1e-3, st:0,
@@ -300,7 +342,17 @@ function strokeEvent(tSec){
   else mot.periods=[];
   mot.lastStroke=tSec;
   if(mot.periods.length){ const avg=mot.periods.reduce((a,b)=>a+b,0)/mot.periods.length; mot.rate=60/avg; }
+  strokeWall.push(Date.now()); if(strokeWall.length>30) strokeWall.shift();
+  if(run && run.armed){ armStroke(); return; }
   if(run) run.strokes++;
+}
+/* auto-start: begin recording once two strokes land within 6 seconds of each other */
+function armStroke(){
+  const now=Date.now();
+  if(!run.armT1 || now-run.armT1>6000){ run.armT1=now; return; }
+  const lead=(now-run.armT1)/1000;
+  run.start=run.armT1; run.id=run.armT1; run.armed=false; run.strokes=1; run.dist=curV()*lead;
+  beep(1200,250); toast(run.wk.mode==='intervals' ? 'Piece 1 — GO' : 'Recording'); renderControls();
 }
 function currentRate(nowSec){
   if(!mot.lastStroke) return 0;
@@ -337,13 +389,14 @@ function newRun(){
   return { id:Date.now(), start:Date.now(), dist:0, strokes:0, samples:[], laps:[], wk, phase: wk.mode==='intervals' ? 'work' : 'justgo',
     rep:1, pieceT:0, pieceD:0, pieceS:0, lapT:0, lapD:0, lapS:0, restEnd:0, lastBeep:-1, sport:S.sport };
 }
-const elapsed = () => run ? (Date.now()-run.start)/1000 : 0;
+const elapsed = () => run && !run.armed ? (Date.now()-run.start)/1000 : 0;
 async function startSession(){
   audioUnlock();
   await startMotion(); startGPS(); keepAwake();
   run = newRun();
   mot.periods=[]; mot.rate=0; mot.lastStroke=0;
   if(S.demo==='1') startDemo();
+  if(S.wk.auto==='1'){ run.armed=true; renderControls(); toast('Row away — recording starts on your first strokes'); return; }
   beep(1200,250);
   renderControls();
   toast(run.wk.mode==='intervals' ? 'Piece 1 — GO' : 'Recording');
@@ -376,7 +429,7 @@ function startPiece(){
   beep(1200,400);
 }
 function workoutTick(){
-  if(!run) return;
+  if(!run || run.armed) return;
   const el=elapsed();
   if(run.phase==='work'){
     const pd=run.dist-run.pieceD, pt=el-run.pieceT;
@@ -389,13 +442,13 @@ function workoutTick(){
 }
 let lastSampleSec=-1;
 function sampleTick(){
-  if(!run) return;
+  if(!run || run.armed) return;
   const s=Math.floor(elapsed()); if(s===lastSampleSec) return; lastSampleSec=s;
   const r=currentRate(nowSecMotion());
   run.samples.push([s, gps.lat!=null?+gps.lat.toFixed(6):null, gps.lon!=null?+gps.lon.toFixed(6):null, +run.dist.toFixed(1), +curV().toFixed(2), +r.toFixed(1), run.strokes, run.phase==='rest'?1:0]);
   if(s%10===0) saveLive();
 }
-function saveLive(){ if(run) LS.set('sp_live', run); }
+function saveLive(){ if(run && !run.armed) LS.set('sp_live', run); }
 function stopSession(){
   if(!run) return;
   if(run.phase==='work' && run.wk.mode==='intervals'){ const el=elapsed(), t=el-run.pieceT, d=run.dist-run.pieceD, s=run.strokes-run.pieceS;
@@ -405,7 +458,7 @@ function stopSession(){
   if(wakeLock){ try{wakeLock.release();}catch(e){} wakeLock=null; }
   LS.del('sp_live');
   if(r.dist<20 && r.samples.length<20){ toast('Too short — not saved'); renderControls(); return; }
-  saveSession(r); renderControls(); beep(500,400);
+  saveSession(r); renderControls(); beep(500,400); setTimeout(syncNow, 500);
   openDetail(r.id);
 }
 function summarize(r){
@@ -446,11 +499,22 @@ const curStrokes = () => !run ? 0 : inPiece()&&run.phase==='work' ? run.strokes-
 const pre = (w,o) => !inPiece() ? o : (run.phase==='rest' ? 'Rest '+w : 'Piece '+w);
 const lab = m => typeof m.lab==='function' ? m.lab() : m.lab;
 
+const LAYOUTS = { '3':{n:3, wide:3, rows:'1fr 1fr 1fr'}, '4':{n:4, wide:2, rows:'1.3fr 1.3fr 1fr'}, '6':{n:6, wide:2, rows:'1.35fr 1.35fr 1fr 1fr'} };
 function buildFields(){
-  const box=$('fields'); box.innerHTML='';
-  S.fields.forEach((key,i)=>{ const d=document.createElement('div'); d.className='f'+(i<2?' wide':''); d.dataset.i=i;
-    d.innerHTML='<span class="lab"></span><span class="unit"></span><span class="val"></span>';
+  const L=LAYOUTS[S.layout]||LAYOUTS['6'], box=$('fields'); box.innerHTML=''; box.className='fields l'+S.layout; box.style.gridTemplateRows=L.rows;
+  S.fields.slice(0,L.n).forEach((key,i)=>{ const d=document.createElement('div'); d.className='f'+(i<L.wide?' wide':''); d.dataset.i=i;
+    d.innerHTML='<span class="lab"></span><span class="unit"></span><span class="val"></span><span class="tag"></span>';
     d.onclick=()=>pickField(i); box.appendChild(d); });
+}
+/* targets: returns ['ok'|'off'|'', tag] for the live Rate and Split boxes */
+function targetState(key){
+  if(!run || run.armed || run.phase==='rest') return ['',''];
+  const w={ tr:(run.wk&&run.wk.tr)||S.wk.tr||[], ts:(run.wk&&run.wk.ts)||S.wk.ts||[] };
+  if(key==='rate' && (w.tr[0]||w.tr[1])){ const r=currentRate(nowSecMotion()); if(r<5) return ['',''];
+    if(w.tr[0] && r<w.tr[0]-0.5) return ['off','LOW']; if(w.tr[1] && r>w.tr[1]+0.5) return ['off','HIGH']; return ['ok','']; }
+  if(key==='split' && (w.ts[0]||w.ts[1])){ const sp=splitSec(curV()); if(sp==null) return ['',''];
+    if(w.ts[1] && sp>w.ts[1]) return ['off','SLOW']; if(w.ts[0] && sp<w.ts[0]) return ['off','FAST']; return ['ok','']; }
+  return ['',''];
 }
 function pickField(i){
   openSheet('<h2 style="margin-bottom:8px">Show in this box</h2>'+METRIC_ORDER.map(k=>'<button class="opt'+(S.fields[i]===k?' on':'')+'" data-k="'+k+'">'+lab(METRICS[k])+'</button>').join(''),
@@ -459,7 +523,8 @@ function pickField(i){
 function renderLive(){
   const boxes=$('fields').children;
   for(let i=0;i<boxes.length;i++){ const m=METRICS[S.fields[i]]; const b=boxes[i];
-    b.children[0].textContent=lab(m); b.children[1].textContent=m.unit(); b.children[2].textContent=m.val(); }
+    b.children[0].textContent=lab(m); b.children[1].textContent=m.unit(); b.children[2].textContent=m.val();
+    const [st,tag]=targetState(S.fields[i]); b.classList.toggle('ok',st==='ok'); b.classList.toggle('off',st==='off'); b.children[3].textContent=tag; }
   // status
   const age=(Date.now()-gps.lastFix)/1000;
   const gd=$('gpsDot'); gd.className='dot'+(gps.lastFix&&age<5 ? (gps.acc<=10?' ok':gps.acc<=+S.maxAcc?' mid':'') : '');
@@ -469,7 +534,8 @@ function renderLive(){
   $('clock').textContent=clock12(new Date());
   // banner
   const bn=$('banner');
-  if(run && run.wk.mode==='intervals'){
+  if(run && run.armed){ bn.style.display='block'; bn.className='banner rest'; bn.textContent='ROW TO START — waiting for strokes'; }
+  else if(run && run.wk.mode==='intervals'){
     bn.style.display='block';
     if(run.phase==='work'){ bn.className='banner'; bn.textContent='PIECE '+run.rep+' of '+run.wk.reps; }
     else if(run.phase==='rest'){ bn.className='banner rest'; bn.textContent='REST '+fmtTime(Math.max(0,(run.restEnd-Date.now())/1000))+'  ·  next: piece '+(run.rep+1); }
@@ -482,6 +548,7 @@ function renderControls(){
   const c=$('controls');
   if(!run){ c.innerHTML='<button class="btn-go" id="bStart">START</button>'; $('bStart').onclick=startSession; $('menuBtn').style.visibility='visible'; return; }
   $('menuBtn').style.visibility='hidden';
+  if(run.armed){ c.innerHTML='<button class="btn-stop" id="bCancel">CANCEL</button>'; $('bCancel').onclick=()=>{ run=null; stopDemo(); if(wakeLock){ try{wakeLock.release();}catch(e){} wakeLock=null; } renderControls(); }; return; }
   c.innerHTML='<button class="btn-lap" id="bLap">LAP</button><button class="btn-stop" id="bStop">STOP</button>';
   $('bLap').onclick=()=>{ if(run.wk.mode==='intervals' && run.phase==='rest'){ startPiece(); } else manualLap(); };
   $('bStop').onclick=askStop;
@@ -503,7 +570,7 @@ function go(name){ document.querySelectorAll('.screen').forEach(s=>s.classList.r
   if(name==='menu') renderMenu(); if(name==='settings') renderSettings(); if(name==='history') renderHistory(); }
 document.addEventListener('click',e=>{ const g=e.target.closest('[data-go]'); if(g) go(g.dataset.go); });
 $('menuBtn').onclick=()=>go('menu');
-$('sunBtn').onclick=()=>{ S.glare = S.glare==='1' ? '0' : '1'; saveSettings(); applyGlare(); toast(S.glare==='1' ? 'Bright mode (outdoor sun)' : 'Dark mode (indoor / low light)'); };
+$('sunBtn').onclick=()=>{ S.theme = {dark:'bright', bright:'night', night:'dark'}[S.theme]||'dark'; saveSettings(); applyGlare(); toast({bright:'Bright mode — direct sun', night:'Night mode — dim red for dark mornings', dark:'Dark mode — indoor / cloudy'}[S.theme]); };
 function openSheet(html, bind){ $('sheetIn').innerHTML=html; $('sheet').classList.add('on'); if(bind) bind($('sheetIn')); }
 function closeSheet(){ $('sheet').classList.remove('on'); }
 $('sheet').onclick=e=>{ if(e.target.id==='sheet') closeSheet(); };
@@ -518,17 +585,29 @@ function renderMenu(){
   $('wkReps').value=w.reps; $('wkRest').value=w.rest;
   $('wkValLab').textContent = w.type==='dist' ? 'Piece length (metres)' : 'Piece length (seconds)';
   $('wkVal').value=w.val;
+  segBind($('wkAuto'), w.auto, v=>{ w.auto=v; saveSettings(); renderMenu(); });
+  if(!Array.isArray(w.tr)) w.tr=[null,null]; if(!Array.isArray(w.ts)) w.ts=[null,null];
+  $('tRlo').value=w.tr[0]||''; $('tRhi').value=w.tr[1]||''; $('tSfast').value=w.ts[0]?fmtTime(w.ts[0]):''; $('tSslow').value=w.ts[1]?fmtTime(w.ts[1]):'';
   $('wkSummary').textContent='Workout: '+wkDesc(w)+'. Pieces end automatically and rest counts down with beeps. Tap GO NOW during rest to start early.';
 }
+function parseSplit(t){ t=String(t||'').trim(); if(!t) return null; const m=t.match(/^(\d{1,2})[:.](\d{1,2}(?:\.\d)?)$/); if(m) return +m[1]*60 + +m[2]; const n=parseFloat(t); return isFinite(n)&&n>0 ? (n<10 ? n*60 : n) : null; }
+['tRlo','tRhi','tSfast','tSslow'].forEach(id=>$(id).addEventListener('change',()=>{ const w=S.wk;
+  const r=x=>{ const n=parseFloat(x); return isFinite(n)&&n>0 ? n : null; };
+  w.tr=[r($('tRlo').value), r($('tRhi').value)]; w.ts=[parseSplit($('tSfast').value), parseSplit($('tSslow').value)];
+  if(w.tr[0]&&w.tr[1]&&w.tr[0]>w.tr[1]) w.tr=[w.tr[1],w.tr[0]]; if(w.ts[0]&&w.ts[1]&&w.ts[0]>w.ts[1]) w.ts=[w.ts[1],w.ts[0]];
+  saveSettings(); renderMenu(); }));
+$('tClear').onclick=()=>{ S.wk.tr=[null,null]; S.wk.ts=[null,null]; saveSettings(); renderMenu(); toast('Targets cleared'); };
 ['wkReps','wkVal','wkRest'].forEach(id=>$(id).addEventListener('change',()=>{ const w=S.wk;
   w.reps=Math.max(1,Math.min(50,parseInt($('wkReps').value)||1)); w.val=Math.max(1,parseInt($('wkVal').value)||1); w.rest=Math.max(0,parseInt($('wkRest').value)||0);
   saveSettings(); renderMenu(); }));
 
 function renderSettings(){
   document.querySelectorAll('[data-set]').forEach(el=>{ const k=el.dataset.set;
-    segBind(el, S[k], v=>{ S[k]=v; if(k==='sport') S.splitBase = v==='row'?'500':'1000'; saveSettings(); applyGlare(); renderSettings(); }); });
+    segBind(el, S[k], v=>{ S[k]=v; if(k==='sport') S.splitBase = v==='row'?'500':'1000'; saveSettings(); applyGlare(); if(k==='layout') buildFields(); renderSettings(); }); });
+  renderBackup();
 }
-function applyGlare(){ document.body.classList.toggle('glare', S.glare==='1'); }
+function applyGlare(){ document.body.classList.toggle('glare', S.theme==='bright'); document.body.classList.toggle('night', S.theme==='night');
+  const m=document.querySelector('meta[name=theme-color]'); if(m) m.content = S.theme==='bright' ? '#ffffff' : (S.theme==='night' ? '#000000' : '#05070a'); }
 
 /* ---------- history ---------- */
 function renderHistory(){
@@ -536,7 +615,7 @@ function renderHistory(){
   if(!idx.length){ box.innerHTML='<p class="muted">No sessions yet. Press START on the main screen to record one.</p>'; return; }
   box.innerHTML=idx.map(s=>{ const d=new Date(s.start);
     return '<button class="item" data-id="'+s.id+'"><div class="t1">'+d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})+' · '+clock12(d)+'</div>'+
-      '<div class="t2">'+fmtDist(s.dist)+' '+distUnit(s.dist)+' · '+fmtTime(s.time)+' · avg '+(s.time>0?fmtSplit(s.dist/s.time):'–')+splitLabel()+' · '+(s.time>0?(s.strokes/s.time*60).toFixed(1):0)+' spm · '+s.wkDesc+'</div></button>'; }).join('');
+      '<div class="t2">'+fmtDist(s.dist)+' '+distUnit(s.dist)+' · '+fmtTime(s.time)+' · avg '+(s.time>0?fmtSplit(s.dist/s.time):'–')+splitLabel()+' · '+(s.time>0?(s.strokes/s.time*60).toFixed(1):0)+' spm · '+s.wkDesc+(s.synced?' · ☁︎':'')+'</div></button>'; }).join('');
   box.querySelectorAll('.item').forEach(b=>b.onclick=()=>openDetail(+b.dataset.id));
 }
 function openDetail(id){
@@ -571,7 +650,8 @@ function openDetail(id){
   $('dBody').innerHTML=html; $('dBody').scrollTop=0;
   drawChart($('chart'), smp); drawTrack($('track'), smp);
   $('exCsv').onclick=()=>exportFile(sm, data, 'csv'); $('exGpx').onclick=()=>exportFile(sm, data, 'gpx');
-  $('delS').onclick=()=>{ if(!confirm('Delete this session?')) return; LS.del('sp_s_'+id); LS.set('sp_index', LS.get('sp_index',[]).filter(x=>x.id!==id)); go('history'); };
+  $('delS').onclick=()=>{ if(!confirm(SYNC.on ? 'Delete this session from this phone and the backup?' : 'Delete this session?')) return; LS.del('sp_s_'+id); LS.set('sp_index', LS.get('sp_index',[]).filter(x=>x.id!==id));
+    if(sm.synced){ const d=LS.get('sp_deleted',[]); d.push(id); LS.set('sp_deleted',d); syncNow(); } go('history'); };
 }
 const stat=(k,v)=>'<div class="stat"><div class="k">'+k+'</div><div class="v">'+v+'</div></div>';
 function canvasSetup(c){ const r=window.devicePixelRatio||1, w=c.clientWidth, h=+c.getAttribute('height'); c.width=w*r; c.height=h*r; c.style.height=h+'px'; const x=c.getContext('2d'); x.scale(r,r); return [x,w,h]; }
@@ -619,6 +699,59 @@ async function exportFile(sm, data, kind){
   try{ if(navigator.canShare && navigator.canShare({files:[file]})){ await navigator.share({files:[file], title:name}); return; } }catch(e){ if(e.name==='AbortError') return; }
   const a=document.createElement('a'); a.href=URL.createObjectURL(file); a.download=name; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href); a.remove();},1000);
 }
+
+/* ---------- cloud backup ---------- */
+const SYNC = Object.assign({ key:null, on:true }, LS.get('sp_sync', {}));
+function newKey(){ const A='ABCDEFGHJKMNPQRSTUVWXYZ23456789', b=new Uint8Array(20); crypto.getRandomValues(b);
+  return [...b].map(x=>A[x%A.length]).join('').match(/.{4}/g).join('-'); }
+if(!SYNC.key){ SYNC.key=newKey(); LS.set('sp_sync', SYNC); }
+const KEY_RE=/^[A-Z2-9]{4}(-[A-Z2-9]{4}){4}$/;
+let syncBusy=false, syncMsg='';
+async function api(path, body){
+  const r = await fetch('/api/sync/'+path, { method: body ? 'POST' : 'GET', headers:{ 'X-Sync-Key':SYNC.key, 'Content-Type':'application/json' }, body: body ? JSON.stringify(body) : undefined, cache:'no-store' });
+  if(!r.ok) throw new Error('http '+r.status); return r.json();
+}
+async function syncNow(){
+  if(!SYNC.on || syncBusy || run || !navigator.onLine || location.protocol!=='https:') return;
+  syncBusy=true;
+  try{
+    const dels=LS.get('sp_deleted',[]);
+    for(const id of dels.slice()){ await api('del',{id}); dels.splice(dels.indexOf(id),1); LS.set('sp_deleted',dels); }
+    const idx=LS.get('sp_index',[]); let n=0;
+    for(const s of idx){ if(s.synced) continue; const data=LS.get('sp_s_'+s.id,null); if(!data){ continue; }
+      const sum=Object.assign({},s); delete sum.synced;
+      await api('put',{ id:s.id, summary:sum, data }); s.synced=true; LS.set('sp_index', idx); n++; }
+    syncMsg = n ? 'Backed up '+n+' new session'+(n>1?'s':'')+' just now.' : 'All sessions backed up.';
+  }catch(e){ syncMsg='Backup waiting for a connection — it will retry.'; }
+  syncBusy=false; if($('scr-settings').classList.contains('on')) renderBackup();
+}
+async function restoreFrom(code){
+  code=String(code||'').trim().toUpperCase().replace(/\s+/g,'').replace(/[^A-Z0-9]/g,'').replace(/(.{4})(?=.)/g,'$1-');
+  if(!KEY_RE.test(code)){ toast('That code doesn\u2019t look right — check it and try again'); return; }
+  const old=SYNC.key; SYNC.key=code;
+  try{
+    const list=(await api('list')).sessions||[];
+    const idx=LS.get('sp_index',[]), have=new Set(idx.map(s=>s.id)); let added=0;
+    for(const it of list){ if(have.has(it.id)) continue; const got=await api('get?id='+it.id);
+      if(LS.set('sp_s_'+it.id, got.data)){ idx.push(Object.assign({}, it.summary, {synced:true})); added++; } }
+    idx.sort((a,b)=>b.start-a.start); idx.forEach(s=>{ if(!list.find(x=>x.id===s.id)) s.synced=false; });
+    LS.set('sp_index', idx); LS.set('sp_sync', SYNC);
+    toast(added ? 'Restored '+added+' session'+(added>1?'s':'') : 'No new sessions to bring over'); $('bkIn').value='';
+    syncNow(); renderBackup();
+  }catch(e){ SYNC.key=old; toast('Couldn\u2019t reach the backup — check your connection'); }
+}
+function renderBackup(){
+  segBind($('bkOn'), SYNC.on?'1':'0', v=>{ SYNC.on=v==='1'; LS.set('sp_sync',SYNC); renderBackup(); if(SYNC.on) syncNow(); });
+  const idx=LS.get('sp_index',[]), done=idx.filter(s=>s.synced).length;
+  $('bkCode').textContent=SYNC.key;
+  $('bkStatus').textContent = !SYNC.on ? 'Backup is off. Sessions stay only on this phone.' :
+    (location.protocol!=='https:' ? 'Backup works once the app is opened from its web address.' : done+' of '+idx.length+' sessions backed up. '+syncMsg);
+}
+$('bkCopy').onclick=async()=>{ try{ await navigator.clipboard.writeText(SYNC.key); toast('Code copied'); }catch(e){ toast('Press and hold the code to copy it'); } };
+$('bkRestore').onclick=()=>restoreFrom($('bkIn').value);
+window.addEventListener('online', ()=>syncNow());
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') syncNow(); });
+setTimeout(syncNow, 3000);
 
 /* ---------- crash recovery ---------- */
 function checkRecovery(){

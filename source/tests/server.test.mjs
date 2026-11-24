@@ -51,3 +51,22 @@ assert.equal(await r.text(), 'pong');
 // wrong-app file rejected
 r = await loader.fetch(new Request('https://x/admin'), env); assert.equal(r.status, 200);
 console.log('ALL SERVER TESTS PASSED');
+
+// ---- cloud backup endpoints ----
+{
+  const KEY = 'ABCD-EFGH-JKMN-PQRS-TUVW', H = { 'X-Sync-Key': KEY, 'Content-Type': 'application/json' };
+  const call = (path, body, key) => loader.fetch(new Request('https://x/api/sync/' + path, { method: body ? 'POST' : 'GET', headers: key === undefined ? H : { 'X-Sync-Key': key }, body: body ? JSON.stringify(body) : undefined }), env);
+  assert.equal((await call('list', null, 'nope')).status, 400);
+  assert.equal((await call('put', { id: 17, summary: { a: 1 }, data: { samples: [[0, 1]] } })).status, 200);
+  assert.equal((await call('put', { id: 18, summary: { a: 2 }, data: { samples: [] } })).status, 200);
+  let l = await (await call('list')).json(); assert.deepEqual(l.sessions.map(s => s.id), [18, 17]);
+  let g = await (await call('get?id=17')).json(); assert.deepEqual(g.data.samples, [[0, 1]]);
+  // another code sees nothing
+  l = await (await call('list', null, 'ZZZZ-ZZZZ-ZZZZ-ZZZZ-ZZZZ')).json(); assert.equal(l.sessions.length, 0);
+  assert.equal((await call('del', { id: 17 })).status, 200);
+  l = await (await call('list')).json(); assert.deepEqual(l.sessions.map(s => s.id), [18]);
+  assert.equal((await call('put', { id: 'x', summary: {}, data: {} })).status, 400);
+  // raw key never stored
+  const rows = await db.prepare('SELECT k FROM sessions').all(); assert.ok(!rows.results.some(r => r.k.includes('ABCD')));
+  console.log('BACKUP TESTS PASSED');
+}
