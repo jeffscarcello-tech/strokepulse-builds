@@ -3,7 +3,7 @@
 GPS speed coach web app for iPhone (rowing / paddling), like the NK SpeedCoach GPS.
 
 ## Current build
-- Test: **sp-20261124c** (v1.3) — 12-hour clock (status bar, Time of Day field, history)
+- Test: **sp-20261124d** (v1.4) — bright-mode button, GPS gap + frozen-split fixes, piece recording fixes
 - Live: not set up yet (test site first)
 
 ## Resources (StrokePulse owns only these)
