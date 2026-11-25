@@ -178,6 +178,7 @@ canvas{width:100%;display:block;border-radius:8px;background:var(--bg)}
       <div class="row"><span>Sport</span><div class="seg" data-set="sport"><button data-v="row">Rowing</button><button data-v="paddle">Paddling</button></div></div>
       <div class="row"><span>Split per</span><div class="seg" data-set="splitBase"><button data-v="500">500 m</button><button data-v="1000">1 km</button><button data-v="1609.344">1 mi</button></div></div>
       <div class="row"><span>Distance / speed</span><div class="seg" data-set="units"><button data-v="metric">Metric</button><button data-v="imperial">Imperial</button></div></div>
+      <div class="row"><span>Your weight <span class="muted" style="font-weight:400">(for calories)</span></span><span><input id="stWeight" type="number" inputmode="decimal" style="width:84px;height:40px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font-size:17px;text-align:center"> <span id="stWUnit" class="muted"></span></span></div>
     </div>
     <div class="card"><h2>Sensors</h2>
       <div class="row"><span>Split averaging</span><div class="seg" data-set="smooth"><button data-v="st3">3 strokes</button><button data-v="st5">5 strokes</button><button data-v="2">2 sec</button><button data-v="5">5 sec</button></div></div>
@@ -503,6 +504,7 @@ function sampleTick(){
   const s=Math.floor(elapsed()); if(s===lastSampleSec) return; lastSampleSec=s;
   const r=currentRate(nowSecMotion());
   run.samples.push([s, gps.lat!=null?+gps.lat.toFixed(6):null, gps.lon!=null?+gps.lon.toFixed(6):null, +run.dist.toFixed(1), +curV().toFixed(2), +r.toFixed(1), run.strokes, run.phase==='rest'?1:0, window.COX?+COX.checkVal().toFixed(2):0]);
+  if(window.ANA) run.kcal=(run.kcal||0)+ANA.met(r, curV())*ANA.kg()/3600;
   if(s%10===0) saveLive();
 }
 function saveLive(){ if(run && !run.armed) LS.set('sp_live', run); }
@@ -542,6 +544,7 @@ const METRICS = {
   avgSplit:{lab:()=>pre('Avg','Avg Split'), unit:()=>splitLabel(), val:()=>{ const t=curTime(), d=curDist(); return t>0&&d>5 ? fmtSplit(d/t, true) : '–:––'; }},
   avgRate: {lab:()=>pre('Avg Rate','Avg Rate'), unit:()=>'spm', val:()=>{ const t=curTime(), s=curStrokes(); return t>5 ? (s/t*60).toFixed(1) : '0'; }},
   dps:     {lab:'Dist / Stroke', unit:()=>imp()?'ft':'m', val:()=>{ const r=currentRate(nowSecMotion()); if(r<5||curV()<0.3) return '0.0'; const d=curV()/(r/60); return imp()?(d*3.28084).toFixed(1):d.toFixed(1); }},
+  cal:     {lab:'Calories', unit:()=>'kcal', val:()=>String(Math.round(run&&run.kcal||0))},
   strokes: {lab:()=>pre('Strokes','Strokes'), unit:()=>'', val:()=>String(curStrokes())},
   remain:  {lab:'Remaining', unit:()=>{ if(!run||run.wk.mode!=='intervals'||run.phase!=='work') return ''; return run.wk.type==='dist'?distUnit(run.wk.val-(run.dist-run.pieceD)):''; },
             val:()=>{ if(!run||run.wk.mode!=='intervals') return '—'; if(run.phase==='rest') return fmtTime(Math.max(0,(run.restEnd-Date.now())/1000));
@@ -549,7 +552,7 @@ const METRICS = {
   check:   {lab:'Check', unit:()=>'m/s²', val:()=>window.COX?COX.checkStr():'–'},
   clock:   {lab:'Time of Day', unit:()=>'', val:()=>clock12(new Date())}
 };
-const METRIC_ORDER=['split','rate','speed','dist','time','avgSplit','avgRate','dps','strokes','remain','totDist','totTime','check','clock'];
+const METRIC_ORDER=['split','rate','speed','dist','time','avgSplit','avgRate','dps','strokes','remain','totDist','totTime','cal','check','clock'];
 const inPiece = () => run && run.wk.mode==='intervals' && (run.phase==='work'||run.phase==='rest');
 const curDist = () => !run ? 0 : inPiece()&&run.phase==='work' ? run.dist-run.pieceD : run.phase==='rest' ? run.dist-run.lapD : run.dist;
 const curTime = () => !run ? 0 : inPiece()&&run.phase==='work' ? elapsed()-run.pieceT : run.phase==='rest' ? elapsed()-run.lapT : elapsed();
@@ -638,7 +641,7 @@ function askStop(){
 setInterval(()=>{ workoutTick(); sampleTick(); if($('scr-live').classList.contains('on')) renderLive(); if($('bLap')){ $('bLap').textContent = run&&run.wk.mode==='intervals'&&run.phase==='rest' ? 'GO NOW' : 'LAP'; } }, 250);
 
 /* ---------- navigation ---------- */
-function go(name){ document.querySelectorAll('.screen').forEach(s=>s.classList.remove('on')); $('scr-'+name).classList.add('on');
+function go(name){ if(window.ANA && name!=='history') ANA.leaving(); document.querySelectorAll('.screen').forEach(s=>s.classList.remove('on')); $('scr-'+name).classList.add('on');
   if(name==='menu') renderMenu(); if(name==='settings') renderSettings(); if(name==='history') renderHistory(); }
 document.addEventListener('click',e=>{ const g=e.target.closest('[data-go]'); if(g) go(g.dataset.go); });
 $('menuBtn').onclick=()=>go('menu');
@@ -681,6 +684,9 @@ $('tClear').onclick=()=>{ S.wk.tr=[null,null]; S.wk.ts=[null,null]; saveSettings
 function renderSettings(){
   document.querySelectorAll('[data-set]').forEach(el=>{ const k=el.dataset.set;
     segBind(el, S[k], v=>{ S[k]=v; if(k==='sport') S.splitBase = v==='row'?'500':'1000'; saveSettings(); applyGlare(); if(k==='layout') buildFields(); renderSettings(); }); });
+  const wi=$('stWeight'), wImp=S.units==='imperial'; $('stWUnit').textContent=wImp?'lb':'kg';
+  wi.value = S.weightKg ? (wImp ? Math.round(S.weightKg/0.4536) : Math.round(S.weightKg)) : ''; wi.placeholder = wImp ? '154' : '70';
+  wi.onchange=()=>{ const v=+wi.value; S.weightKg = v>0 ? +(wImp ? v*0.4536 : v).toFixed(1) : 0; saveSettings(); const idx=LS.get('sp_index',[]); idx.forEach(x=>delete x.cv); LS.set('sp_index',idx); toast(v>0?'Weight saved':'Weight cleared'); };
   renderBackup();
   if(window.COX) COX.settings();
 }
@@ -695,38 +701,22 @@ function renderHistory(){
     return '<button class="item" data-id="'+s.id+'"><div class="t1">'+d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})+' · '+clock12(d)+'</div>'+
       '<div class="t2">'+fmtDist(s.dist)+' '+distUnit(s.dist)+' · '+fmtTime(s.time)+' · avg '+(s.time>0?fmtSplit(s.dist/s.time):'–')+splitLabel()+' · '+(s.time>0?(s.strokes/s.time*60).toFixed(1):0)+' spm · '+s.wkDesc+(s.cox?' · 🎙':'')+(s.synced?' · ☁︎':'')+'</div></button>'; }).join('');
   box.querySelectorAll('.item').forEach(b=>b.onclick=()=>openDetail(+b.dataset.id));
+  if(window.ANA) ANA.historyDecorate();
 }
 function openDetail(id){
   const idx=LS.get('sp_index',[]); const sm=idx.find(x=>x.id===id); const data=LS.get('sp_s_'+id,null);
   if(!sm||!data){ toast('Session not found'); return; }
   go('detail');
   const d=new Date(sm.start); $('dTitle').textContent=d.toLocaleDateString(undefined,{month:'short',day:'numeric'})+' '+clock12(d);
-  const smp=data.samples, T=sm.time;
-  const work=smp.filter(s=>!s[7]);
-  const maxV=Math.max(0,...work.map(s=>s[4]));
-  const rates=work.map(s=>s[5]).filter(r=>r>0);
-  const avgDps = sm.strokes>0 ? sm.dist/sm.strokes : 0;
-  let html='<div class="card"><div class="grid3">'+
-    stat('Distance', fmtDist(sm.dist)+' '+distUnit(sm.dist))+stat('Time', fmtTime(T))+stat('Avg Split', (T>0?fmtSplit(sm.dist/T):'–'))+
-    stat('Avg Rate', (T>0?(sm.strokes/T*60).toFixed(1):'0'))+stat('Strokes', sm.strokes)+stat('Avg DPS', (imp()?(avgDps*3.28084).toFixed(1)+' ft':avgDps.toFixed(1)+' m'))+
-    stat('Best Split', maxV>0?fmtSplit(maxV):'–')+stat('Max Rate', rates.length?Math.max(...rates).toFixed(0):'0')+stat('Workout', sm.wkDesc)+'</div></div>';
-  html+='<div class="card"><h2>Split &amp; Rate</h2><canvas id="chart" height="200"></canvas><p class="muted" style="margin-top:6px"><span style="color:var(--acc)">■</span> Split (higher = faster) &nbsp; <span style="color:var(--warn)">■</span> Stroke rate</p></div>';
-  if(data.laps && data.laps.length){
-    html+='<div class="card"><h2>'+(data.wk&&data.wk.mode==='intervals'?'Pieces':'Laps')+'</h2><table><tr><th>#</th><th>Dist</th><th>Time</th><th>Split</th><th>Rate</th><th>DPS</th></tr>'+
-      data.laps.map(l=>'<tr style="'+(l.type==='rest'?'color:var(--dim)':'')+'"><td>'+(l.type==='rest'?'rest':(l.type==='work'?'P'+l.rep:(l.type==='split'?'·'+l.n:l.n)))+'</td><td>'+fmtDist(l.d)+'</td><td>'+fmtTime(l.t)+'</td><td>'+(l.t>0?fmtSplit(l.d/l.t):'–')+'</td><td>'+l.rate.toFixed(1)+'</td><td>'+(l.s>0?(l.d/l.s).toFixed(1):'–')+'</td></tr>').join('')+'</table></div>';
+  let html=ANA.detailHtml(sm, data);
+  if(data.laps && data.laps.length && !(data.wk&&data.wk.mode==='intervals')){
+    html+='<div class="card"><h2>Laps</h2><table><tr><th>#</th><th>Dist</th><th>Time</th><th>Split</th><th>Rate</th><th>DPS</th></tr>'+
+      data.laps.map(l=>'<tr style="'+(l.type==='rest'?'color:var(--dim)':'')+'"><td>'+(l.type==='rest'?'rest':(l.type==='split'?'·'+l.n:l.n))+'</td><td>'+fmtDist(l.d)+'</td><td>'+fmtTime(l.t)+'</td><td>'+(l.t>0?fmtSplit(l.d/l.t):'–')+'</td><td>'+(l.rate||0).toFixed(1)+'</td><td>'+(l.s>0?(l.d/l.s).toFixed(1):'–')+'</td></tr>').join('')+'</table></div>';
   }
-  const seg = imp() ? 1609.344/4 : (+S.splitBase===500 ? 500 : 1000);
-  const segs=[]; let next=seg, pv=smp[0]||[0,0,0,0,0,0,0];
-  for(const s of smp){ while(s[3]>=next){ segs.push({at:next, t:s[0], n:s[6]}); next+=seg; } }
-  if(segs.length){
-    let pt=0,pn=0,pd=0;
-    html+='<div class="card"><h2>Every '+(imp()?'¼ mile':seg+' m')+'</h2><table><tr><th>At</th><th>Time</th><th>Split</th><th>Rate</th></tr>'+
-      segs.map(g=>{ const dt=g.t-pt, dn=g.n-pn, dd=g.at-pd; pt=g.t; pn=g.n; pd=g.at; return '<tr><td>'+fmtDist(g.at)+distUnit(g.at)+'</td><td>'+fmtTime(dt)+'</td><td>'+(dt>0?fmtSplit(dd/dt):'–')+'</td><td>'+(dt>0?(dn/dt*60).toFixed(1):'–')+'</td></tr>'; }).join('')+'</table></div>';
-  }
-  html+='<div id="coxBox"></div><div class="card"><h2>Course</h2><canvas id="track" height="260"></canvas></div>';
+  html+='<div id="coxBox"></div>';
   html+='<button class="big" id="exCsv">Export CSV (spreadsheet)</button><button class="big alt" id="exGpx">Export GPX (Strava / maps)</button><button class="big red" id="delS" style="margin-bottom:30px">Delete Session</button>';
   $('dBody').innerHTML=html; $('dBody').scrollTop=0;
-  drawChart($('chart'), smp); drawTrack($('track'), smp);
+  ANA.detailWire(id, sm, data);
   if(window.COX) COX.detail(id, sm, data);
   $('exCsv').onclick=()=>exportFile(sm, data, 'csv'); $('exGpx').onclick=()=>exportFile(sm, data, 'gpx');
   $('delS').onclick=()=>{ if(!confirm(SYNC.on ? 'Delete this session from this phone and the backup?' : 'Delete this session?')) return; if(window.COX) COX.deleteLocal(id); LS.del('sp_s_'+id); LS.set('sp_index', LS.get('sp_index',[]).filter(x=>x.id!==id));
@@ -873,5 +863,6 @@ setInterval(()=>{ if(swWaiting) $('upd').classList.toggle('on', !run); }, 1000);
 window.__SP = { processAccel, strokeEvent, mot, S, handleFix, gps }; // test hook
 </script>
 <script src="/cox.js?v=__BUILD__"></script>
+<script src="/analytics.js?v=__BUILD__"></script>
 </body>
 </html>

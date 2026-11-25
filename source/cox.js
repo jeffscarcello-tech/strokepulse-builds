@@ -483,6 +483,7 @@ async function renderAnalysis(box, opts){
   function ui(force){
     const b = $c('cxaPlay'); if(!b) { P.audio.pause(); return; }
     const nowT = performance.now(); if(!force && P.playing && nowT - uiT < 250) return; uiT = nowT;
+    if(window.ANA) ANA.cursor(P.t);
     b.textContent = P.playing ? '❚❚' : '▶'; const pos = $c('cxaPos'); if(document.activeElement !== pos) pos.value = Math.round(P.t); $c('cxaPT').textContent = fmtTime(Math.max(0, P.t));
     drawChart();
     document.querySelectorAll('#cxaList .call').forEach(el => { const t = +el.dataset.t, on = P.t >= t - 0.2 && P.t < t + 3; if(el.classList.contains('sel') !== on) el.classList.toggle('sel', on); });
@@ -526,6 +527,7 @@ async function renderAnalysis(box, opts){
   function timeAtDist(d){ for(const z of smp0) if(z[3] >= d) return z[0]; return smp0.length ? smp0[smp0.length - 1][0] : 0; }
   function wire(A, smp){
     A0 = A; smp0 = smp; buildSeries();
+    if(window.ANA){ ANA.calls(A.calls); if(sid && !COACH_MODE) ANA.coxSave(sid, A); }
     const paintChips = () => document.querySelectorAll('#cxaM button').forEach(btn => btn.classList.toggle('on', CHM.includes(btn.dataset.m)));
     document.querySelectorAll('#cxaM button').forEach(btn => btn.onclick = () => { const k = btn.dataset.m; CHM = CHM.includes(k) ? CHM.filter(q => q !== k) : CHM.concat(k); LS.set('sp_chartm', CHM); paintChips(); ui(true); });
     paintChips();
@@ -636,7 +638,13 @@ async function coachSession(id){
 }
 
 /* ================= boot ================= */
-window.COX = { sessionStart, sessionStop, sessionCancel, syncAudio, deleteLocal, detail, accel:ckAccel, stroke:ckStroke, checkVal,
+async function analyseSession(id){
+  const data = LS.get('sp_s_' + id, null); if(!data || !data.cox || !SYNC.key) return null;
+  const r = await fetch('/api/cox/chunks?sid=' + id, { headers:{ 'X-Sync-Key':SYNC.key }, cache:'no-store' }); if(!r.ok) throw new Error('net');
+  const chunks = (await r.json()).chunks || []; if(!chunks.some(c => (c.tx || []).length)) return null;
+  return analyse(data, chunks);
+}
+window.COX = { analyseSession, sessionStart, sessionStop, sessionCancel, syncAudio, deleteLocal, detail, accel:ckAccel, stroke:ckStroke, checkVal,
   checkStr:() => { const v = checkVal(); return v ? v.toFixed(1) : '–'; }, menu:renderMenuCards, settings:renderSettingsCard, on:() => !!CS.on,
   _test:{ categorize, analyse, buildCalls, parsePlan, ulawEnc, ulawDec, encodeFrame, CS, L, M, CH } };
 if(COACH_MODE){ coachMount(); return; }

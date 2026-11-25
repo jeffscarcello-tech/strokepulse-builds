@@ -21,7 +21,11 @@ manifest = json.dumps({ 'name': 'StrokePulse', 'short_name': 'StrokePulse', 'sta
 assert '__BUILD__' not in html and '__LABEL__' not in html
 app = { 'app': 'strokepulse', 'build': build, 'label': label, 'html': html, 'sw': sw, 'manifest': manifest, 'icon_svg': svg,
         'i192': png(192), 'i512': png(512, True), 'apple': png(180, True),
-        'files': { '/cox.js': { 'type': 'application/javascript; charset=utf-8', 'b64': base64.b64encode(sub(open(os.path.join(here, 'cox.js')).read()).encode()).decode() } } }
+        'files': {
+            '/cox.js': { 'type': 'application/javascript; charset=utf-8', 'b64': base64.b64encode(sub(open(os.path.join(here, 'cox.js')).read()).encode()).decode() },
+            '/analytics.js': { 'type': 'application/javascript; charset=utf-8', 'b64': base64.b64encode(sub(open(os.path.join(here, 'analytics.js')).read()).encode()).decode() },
+            '/leaflet.js': { 'type': 'application/javascript; charset=utf-8', 'b64': base64.b64encode(open(os.path.join(here, 'vendor', 'leaflet.js'), 'rb').read()).decode() },
+            '/leaflet.css': { 'type': 'text/css; charset=utf-8', 'b64': base64.b64encode(open(os.path.join(here, 'vendor', 'leaflet.css'), 'rb').read()).decode() } } }
 json.dump(app, open(os.path.join(out, 'app.json'), 'w'))
 open(os.path.join(out, 'build.txt'), 'w').write(build + '\n')
 print('built', build, label, len(json.dumps(app)), 'bytes')
