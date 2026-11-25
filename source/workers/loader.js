@@ -1,6 +1,6 @@
 // StrokePulse site Worker (loader) — serves the app installed in D1 by strokepulse-updater,
 // plus cloud backup, Cox mode recordings/transcripts, private coach links, and the live coach relay.
-const LOADER = 'l7';
+const LOADER = 'l8';
 let appCache = null, appChecked = 0;
 async function ensure(db) {
   await db.prepare('CREATE TABLE IF NOT EXISTS appmeta (k TEXT PRIMARY KEY, v TEXT NOT NULL)').run();
@@ -56,6 +56,7 @@ async function crewTables(db) {
     db.prepare('CREATE TABLE IF NOT EXISTS crew_members (crew TEXT NOT NULL, mid TEXT NOT NULL, th TEXT NOT NULL, name TEXT NOT NULL, color TEXT NOT NULL, joined INTEGER NOT NULL, seen INTEGER NOT NULL, PRIMARY KEY (crew, mid))'),
     db.prepare('CREATE TABLE IF NOT EXISTS crew_sessions (crew TEXT NOT NULL, mid TEXT NOT NULL, sid INTEGER NOT NULL, s TEXT NOT NULL, start INTEGER NOT NULL, PRIMARY KEY (crew, mid, sid))'),
   ]);
+  try { await db.prepare('ALTER TABLE crews ADD COLUMN lineup TEXT').run(); } catch (e) {}   // shared lineup of the day (added in l8)
   crewReady = true;
 }
 async function crewAuth(request, env, crewId) {
@@ -69,6 +70,9 @@ function cleanSession(o) {
   const out = { id: sid, start, dist: num(o.dist, 0, 500000) || 0, time: num(o.time, 0, 86400) || 0, strokes: num(o.strokes, 0, 100000) || 0, kcal: num(o.kcal, 0, 20000) || 0, mode: o.mode === 'intervals' ? 'intervals' : 'justgo', wkDesc: cleanName(o.wkDesc) };
   for (const k of ['b500', 'b1k', 'b2k']) { const v = num(o[k], 30, 3600); if (v) out[k] = +v.toFixed(1); }
   const st = num(o.st, 0, 100); if (st != null) out.st = Math.round(st);
+  const kpk = num(o.kpk, 0, 60); if (kpk != null) out.kpk = +kpk.toFixed(2);   // calories per kg, so each rower's own weight can be applied
+  const load = num(o.load, 0, 2000); if (load != null) out.load = Math.round(load);
+  if (o.lu) out.lu = cleanName(o.lu);
   return out;
 }
 async function crew(request, env, op, url) {
@@ -107,7 +111,8 @@ async function crew(request, env, op, url) {
   if (!mid) return json({ error: 'not_member' }, 403);
   if (op === 'board') {
     const since = now - 400 * 864e5;
-    const c = await db.prepare('SELECT id, name, code, owner, goal_m FROM crews WHERE id = ?1').bind(crewId).first();
+    const c = await db.prepare('SELECT id, name, code, owner, goal_m, lineup FROM crews WHERE id = ?1').bind(crewId).first();
+    if (c) { try { c.lineup = c.lineup ? JSON.parse(c.lineup) : null; } catch (e) { c.lineup = null; } }
     const ms = (await db.prepare('SELECT mid, name, color, joined, seen FROM crew_members WHERE crew = ?1').bind(crewId).all()).results || [];
     const ss = (await db.prepare('SELECT mid, s FROM crew_sessions WHERE crew = ?1 AND start >= ?2').bind(crewId, since).all()).results || [];
     await db.prepare('UPDATE crew_members SET seen = ?1 WHERE crew = ?2 AND mid = ?3').bind(now, crewId, mid).run();
@@ -116,11 +121,33 @@ async function crew(request, env, op, url) {
   if (op === 'push') {
     const list = (Array.isArray(body.sessions) ? body.sessions : []).slice(0, 600).map(cleanSession).filter(Boolean);
     const since = num(body.since, 0, 9e15) || 0, st = [];
-    if (body.replace) st.push(db.prepare('DELETE FROM crew_sessions WHERE crew = ?1 AND mid = ?2 AND start >= ?3').bind(crewId, mid, since));
+    if (body.replace) st.push(db.prepare(`DELETE FROM crew_sessions WHERE crew = ?1 AND mid = ?2 AND start >= ?3 AND s NOT LIKE '%"by":%'`).bind(crewId, mid, since));   // keep sessions others credited to this rower
     for (const o of list) st.push(db.prepare('INSERT OR REPLACE INTO crew_sessions (crew, mid, sid, s, start) VALUES (?1, ?2, ?3, ?4, ?5)').bind(crewId, mid, o.id, JSON.stringify(o), o.start));
     if (body.name) st.push(db.prepare('UPDATE crew_members SET name = ?1, color = ?2 WHERE crew = ?3 AND mid = ?4').bind(cleanName(body.name) || 'Rower', cleanColor(body.color), crewId, mid));
     for (let i = 0; i < st.length; i += 50) await db.batch(st.slice(i, i + 50));
     return json({ ok: true, n: list.length });
+  }
+  if (op === 'credit') {   // the phone that recorded a boat session credits it to the other rowers in the boat
+    const o = cleanSession(body.session); if (!o) return json({ error: 'bad_session' }, 400);
+    const me = await db.prepare('SELECT name FROM crew_members WHERE crew = ?1 AND mid = ?2').bind(crewId, mid).first();
+    const want = [...new Set((Array.isArray(body.mids) ? body.mids : []).filter(x => /^[a-f0-9]{16}$/.test(x) && x !== mid))].slice(0, 12);
+    if (!want.length) return json({ ok: true, n: 0 });
+    const ok = ((await db.prepare('SELECT mid FROM crew_members WHERE crew = ?1').bind(crewId).all()).results || []).map(r => r.mid).filter(x => want.includes(x));
+    const s2 = JSON.stringify(Object.assign({}, o, { by: mid, byName: me ? me.name : '' }));
+    if (ok.length) await db.batch(ok.map(x => db.prepare('INSERT OR REPLACE INTO crew_sessions (crew, mid, sid, s, start) VALUES (?1, ?2, ?3, ?4, ?5)').bind(crewId, x, o.id, s2, o.start)));
+    return json({ ok: true, n: ok.length });
+  }
+  if (op === 'uncredit') {
+    const sid = num(body.sid, 1, 9e15); if (!sid) return json({ error: 'bad_sid' }, 400);
+    await db.prepare(`DELETE FROM crew_sessions WHERE crew = ?1 AND sid = ?2 AND mid != ?3 AND s LIKE ?4`).bind(crewId, sid, mid, '%"by":"' + mid + '"%').run();
+    return json({ ok: true });
+  }
+  if (op === 'lineup') {   // share today's lineup with the whole crew (names and seats only)
+    let lu = null;
+    if (body.lineup) { const L = body.lineup, seats = (Array.isArray(L.seats) ? L.seats : []).slice(0, 8).map(x => ({ n: cleanName(x && x.n), s: x && /^[PS]$/.test(x.s) ? x.s : '' }));
+      lu = JSON.stringify({ name: cleanName(L.name), type: /^[1248][x+-]?$/.test(L.type || '') ? L.type : '8+', boat: cleanName(L.boat), cox: cleanName(L.cox), seats, note: String(L.note || '').replace(/[<>]/g, '').slice(0, 200), at: now, by: mid }); }
+    await db.prepare('UPDATE crews SET lineup = ?1 WHERE id = ?2').bind(lu, crewId).run();
+    return json({ ok: true });
   }
   if (op === 'goal') { const g = num(body.goal_m, 0, 10000000); if (g == null) return json({ error: 'goal' }, 400); await db.prepare('UPDATE crews SET goal_m = ?1 WHERE id = ?2').bind(Math.round(g), crewId).run(); return json({ ok: true }); }
   if (op === 'leave' || op === 'remove') {

@@ -304,12 +304,12 @@ const BOATS = { '8':['Cox','Stroke','7','6','5','4','3','2','Bow'], '4':['Cox','
 function renderMenuCards(){
   const box = $c('coxMenu'); if(!box) return;
   const seats = BOATS[CS.crew.boat] || BOATS['8'];
-  box.innerHTML = '<div class="card"><h2>Crew Roster</h2><div class="row"><span>Boat</span><div class="seg" id="cxBoat"><button data-v="4">Coxed 4</button><button data-v="8">Eight</button></div></div>' +
-    '<div class="crewgrid" style="padding-top:8px">' + seats.map(s => '<span class="muted">' + s + '</span><input data-seat="' + s + '" value="' + esc(CS.crew.names[s] || '') + '" placeholder="Name">').join('') + '</div></div>' +
+  box.innerHTML = (window.LU ? LU.menuCardHtml() : '<div class="card"><h2>Crew Roster</h2><div class="row"><span>Boat</span><div class="seg" id="cxBoat"><button data-v="4">Coxed 4</button><button data-v="8">Eight</button></div></div>' +
+    '<div class="crewgrid" style="padding-top:8px">' + seats.map(s => '<span class="muted">' + s + '</span><input data-seat="' + s + '" value="' + esc(CS.crew.names[s] || '') + '" placeholder="Name">').join('') + '</div></div>') +
     (!CS.on ? '' : '<div class="card"><h2>Race Plan Prompts</h2><textarea class="coxin" id="cxPlan" placeholder="500 Settle into rhythm&#10;1000 Power ten — legs&#10;250 to go Sprint!&#10;1:30 Push for two">' + esc(CS.plan) + '</textarea>' +
     '<p class="muted" style="padding-top:8px">One per line. A number is metres into the piece; "250 to go" counts down to the end of a distance piece; 1:30 is time into the piece. The call pops up big on your screen at that point.</p></div>' +
     '<div class="card"><h2>Rate Beeper</h2><div class="row"><span>Beat (strokes per minute)</span><input type="number" id="cxBeat" min="10" max="60" value="' + (+CS.beepRate || 28) + '"></div><p class="muted" style="padding-top:8px">The ♪ button on the main screen plays a click at this rate through the speakers. Settings › Cox Mode chooses whether it starts when you tap ♪ or waits for the session to start. It always stops when the session stops.</p></div>');
-  segBind($c('cxBoat'), CS.crew.boat, v => { CS.crew.boat = v; saveCS(); renderMenuCards(); });
+  if(window.LU) LU.wireMenu(box); else segBind($c('cxBoat'), CS.crew.boat, v => { CS.crew.boat = v; saveCS(); renderMenuCards(); });
   box.querySelectorAll('[data-seat]').forEach(i => i.addEventListener('change', () => { CS.crew.names[i.dataset.seat] = i.value.trim().slice(0, 40); saveCS(); }));
   if($c('cxPlan')) $c('cxPlan').addEventListener('change', () => { CS.plan = $c('cxPlan').value.slice(0, 2000); saveCS(); });
   if($c('cxBeat')) $c('cxBeat').addEventListener('change', () => { CS.beepRate = Math.max(10, Math.min(60, parseInt($c('cxBeat').value) || 28)); saveCS(); renderBar(); });
@@ -351,7 +351,7 @@ async function sessionStart(){
 function sessionCancel(){ beatSessionEnd(); if(M.recording){ const rec = M.recId; recStop().then(() => idbDelRec(rec)); } }
 function sessionStop(r){
   beatSessionEnd();
-  if(Object.values(CS.crew.names || {}).some(n => n)) r.crew = { boat:CS.crew.boat, names:Object.assign({}, CS.crew.names) };
+  const luc = window.LU && LU.crewFor(); if(luc) r.crew = luc; else if(!window.LU && Object.values(CS.crew.names || {}).some(n => n)) r.crew = { boat:CS.crew.boat, names:Object.assign({}, CS.crew.names) };
   if(!CS.on) return;
   if(!M.recording) return;
   r.cox = { rec:M.recId };
@@ -544,11 +544,11 @@ async function renderAnalysis(box, opts){
   load();
 }
 function detail(id, sm, data){
-  const box = $c('coxBox'); if(!box || !data || !data.cox) { if(box && data && data.crew) box.innerHTML = crewCard(data.crew); return; }
+  const box = $c('coxBox'); if(!box || !data || !data.cox) { if(box && data && data.crew && !data.lineup) box.innerHTML = crewCard(data.crew); return; }
   const recId = data.cox.rec;
   box.innerHTML = '';
   const inner = document.createElement('div'); box.appendChild(inner);
-  if(data.crew) box.insertAdjacentHTML('afterbegin', crewCard(data.crew));
+  if(data.crew && !data.lineup) box.insertAdjacentHTML('afterbegin', crewCard(data.crew));
   const H = { 'X-Sync-Key':SYNC.key };
   renderAnalysis(inner, { data, sid:id,
     getChunks: async () => {
@@ -563,7 +563,7 @@ function detail(id, sm, data){
     retxAll: () => fetch('/api/cox/retx?all=1&sid=' + id, { method:'POST', headers:H }).catch(() => {})
   });
 }
-function crewCard(crew){ const seats = BOATS[crew.boat] || BOATS['8']; const names = seats.filter(s => crew.names && crew.names[s]); if(!names.length) return '';
+function crewCard(crew){ const seats = crew.seats || BOATS[crew.boat] || BOATS['8']; const names = seats.filter(s => crew.names && crew.names[s]); if(!names.length) return '';
   return '<div class="card"><h2>Crew</h2>' + names.map(s => '<div class="row"><span class="muted">' + s + '</span><b>' + esc(crew.names[s]) + '</b></div>').join('') + '</div>'; }
 
 /* ================= coach view (#coach=TOKEN) ================= */

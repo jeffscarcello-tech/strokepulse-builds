@@ -525,6 +525,7 @@ async function detailWire(id, sm, data){
   if(!data.cox && $a('anaChart')){ const box = document.createElement('div'); $a('anaChart').appendChild(box); chart(box, [{ samples:data.samples || [] }]); }
   const anchor = $a('coxBox'), card = () => { const d = document.createElement('div'); d.className = 'card'; anchor.parentNode.insertBefore(d, anchor); return d; };
   if(window.TRN) TRN.detailExtra(id, sm, data, $a('anaMap').closest('.card'));
+  if(window.LU && data.lineup) $a('anaMap').closest('.card').insertAdjacentHTML('beforebegin', LU.detailHtml(data));
   piecesCard(card(), data); segCard(card(), data.samples || []); rateCard(card(), data.samples || []); sameCard(card(), sm, data);
   // weather follows the map: the pin starts at the session start; tap the map to move it and the weather updates for that spot
   let wxSeq = 0;
@@ -539,6 +540,7 @@ let pendingCalls = null;
 let picking = false, picked = [];
 function historyDecorate(){
   const box = $a('histList'); if(!box) return; const { idx, pb } = ensureCache();
+  if(window.TRN){ let cc = $a('crCred'); const html = TRN.creditedCard(); if(html){ if(!cc){ cc = document.createElement('div'); cc.id = 'crCred'; box.prepend(cc); } cc.innerHTML = html; } else if(cc) cc.remove(); }
   box.classList.toggle('picking', picking);
   let tools = $a('histTools');
   if(!tools){ tools = document.createElement('div'); tools.id = 'histTools'; tools.style.cssText = 'display:flex;gap:8px;padding:10px 12px 12px;background:var(--bg);border-bottom:1px solid var(--edge,var(--line));box-shadow:0 6px 14px rgba(0,0,0,.3);position:relative;z-index:3'; box.parentNode.insertBefore(tools, box); }

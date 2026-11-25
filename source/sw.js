@@ -1,6 +1,6 @@
 // StrokePulse service worker — build __BUILD__
 const CACHE = 'strokepulse-__BUILD__';
-const CORE = ['/', '/manifest.webmanifest?v=__BUILD__', '/icon.svg?v=__BUILD__', '/icon-192.png?v=__BUILD__', '/apple-touch-icon.png?v=__BUILD__', '/cox.js?v=__BUILD__', '/analytics.js?v=__BUILD__', '/train.js?v=__BUILD__', '/inter-900.woff?v=__BUILD__', '/leaflet.js?v=__BUILD__', '/leaflet.css?v=__BUILD__'];
+const CORE = ['/', '/manifest.webmanifest?v=__BUILD__', '/icon.svg?v=__BUILD__', '/icon-192.png?v=__BUILD__', '/apple-touch-icon.png?v=__BUILD__', '/cox.js?v=__BUILD__', '/analytics.js?v=__BUILD__', '/train.js?v=__BUILD__', '/lineup.js?v=__BUILD__', '/inter-900.woff?v=__BUILD__', '/leaflet.js?v=__BUILD__', '/leaflet.css?v=__BUILD__'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE))); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener('message', e => { if (e.data === 'skipWaiting') self.skipWaiting(); });

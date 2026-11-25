@@ -192,3 +192,25 @@ console.log('ALL SERVER TESTS PASSED');
   globalThis.fetch = realFetch;
   console.log('REPORT EMAIL TESTS PASSED');
 }
+{ // CREDIT + SHARED LINEUP (l8)
+  const C = (op, body, hdr) => loader.fetch(new Request('https://x/api/crew/' + op, { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, hdr || {}), body: JSON.stringify(body) }), env);
+  const B = (c, h) => loader.fetch(new Request('https://x/api/crew/board?crew=' + c, { headers: h }), env).then(r => r.json());
+  const a = await (await C('create', { crew: 'Eight', name: 'Cox Kim' })).json(), HA = { 'X-Member': a.mid + ':' + a.token };
+  const b = await (await C('join', { code: a.crew.code, name: 'Emily' })).json(), HB = { 'X-Member': b.mid + ':' + b.token };
+  const c = await (await C('join', { code: a.crew.code, name: 'Ava' })).json(), HC = { 'X-Member': c.mid + ':' + c.token };
+  const now = Date.now(), sess = { id: now - 1000, start: now - 1000, dist: 8000, time: 2400, strokes: 900, kcal: 400, kpk: 5.6, load: 70, lu: 'Varsity 8+' };
+  let r = await (await C('credit', { crew: a.crew.id, session: sess, mids: [b.mid, c.mid, 'ffffffffffffffff', a.mid] }, HA)).json(); assert.equal(r.n, 2);
+  let bd = await B(a.crew.id, HB); const em = bd.members.find(m => m.mid === b.mid).sessions[0];
+  assert.equal(em.by, a.mid); assert.equal(em.byName, 'Cox Kim'); assert.equal(em.kpk, 5.6); assert.equal(em.lu, 'Varsity 8+');
+  // Emily's own push (replace) must not wipe the credited session
+  await C('push', { crew: a.crew.id, replace: true, since: 0, sessions: [{ id: now - 5000, start: now - 5000, dist: 2000, time: 600, strokes: 200 }] }, HB);
+  bd = await B(a.crew.id, HB); assert.equal(bd.members.find(m => m.mid === b.mid).sessions.length, 2);
+  // only the recorder can take the credit back
+  await C('uncredit', { crew: a.crew.id, sid: sess.id }, HC); bd = await B(a.crew.id, HB); assert.equal(bd.members.find(m => m.mid === b.mid).sessions.length, 2);
+  await C('uncredit', { crew: a.crew.id, sid: sess.id }, HA); bd = await B(a.crew.id, HB); assert.equal(bd.members.find(m => m.mid === b.mid).sessions.length, 1); assert.equal(bd.members.find(m => m.mid === c.mid).sessions.length, 0);
+  // shared lineup
+  await C('lineup', { crew: a.crew.id, lineup: { name: 'Race day <b>', type: '8+', boat: 'Empacher', cox: 'Kim', seats: [{ n: 'Ava', s: 'S' }, { n: 'Emily', s: 'P' }], note: 'Be at the dock 6:15' } }, HB);
+  bd = await B(a.crew.id, HC); assert.equal(bd.crew.lineup.name, 'Race day b'); assert.equal(bd.crew.lineup.seats[1].n, 'Emily'); assert.equal(bd.crew.lineup.note, 'Be at the dock 6:15');
+  await C('lineup', { crew: a.crew.id, lineup: null }, HA); bd = await B(a.crew.id, HC); assert.equal(bd.crew.lineup, null);
+  console.log('CREDIT + LINEUP TESTS PASSED');
+}

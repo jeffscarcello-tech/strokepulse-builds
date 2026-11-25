@@ -88,7 +88,14 @@ function profiles(){ let l = LS.get('sp_profiles', null); if(!Array.isArray(l) |
 function cur(){ const l = profiles(), id = LS.get('sp_prof', null); return l.find(p => p.id === id) || l[0]; }
 function owner(s){ const l = profiles(); return s.who && l.some(p => p.id === s.who) ? s.who : l[0].id; }
 const mine = s => owner(s) === cur().id;
-const sessionsOf = pid => LS.get('sp_index', []).filter(s => owner(s) === pid);
+/* sessions this rower rowed: their own, plus boat sessions a crew-mate's phone recorded and credited to them */
+function credited(pid){
+  const p = profiles().find(x => x.id === pid); if(!p) return []; const out = [], seen = new Set(), w = (+p.kg || 0) >= 25 ? +p.kg : 70;
+  for(const c of (p.crews || [])){ const b = LS.get('sp_crewb_' + c.id, null); if(!b) continue; const me = b.members.find(m => m.mid === b.me); if(!me) continue;
+    for(const x of me.sessions || []) if(x.by && !seen.has(x.id)){ seen.add(x.id); out.push(Object.assign({}, x, { cr:true, who:pid, kcal:x.kpk ? Math.round(x.kpk * w) : x.kcal, b500:undefined, b1k:undefined, b2k:undefined, crewName:c.name })); } }
+  return out;
+}
+const sessionsOf = (pid, ownOnly) => { const own = LS.get('sp_index', []).filter(s => owner(s) === pid); if(ownOnly) return own; const ids = new Set(own.map(s => s.id)); return own.concat(credited(pid).filter(x => !ids.has(x.id))).sort((a, b) => b.start - a.start); };
 function kg(){ const w = +cur().kg || 0; return w >= 25 && w <= 250 ? w : 70; }
 function setKg(v){ const l = profiles(), p = l.find(x => x.id === cur().id); p.kg = v; LS.set('sp_profiles', l); invalidate(); }
 const initials = n => String(n || '?').trim().split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
@@ -398,10 +405,10 @@ async function crewApi(op, body, c){
   const r = await fetch('/api/crew/' + op + (op === 'board' ? '?crew=' + c.id : ''), op === 'board' ? { headers:h, cache:'no-store' } : { method:'POST', headers:h, body:JSON.stringify(body || {}) });
   const j = await r.json().catch(() => ({})); if(!r.ok) throw Object.assign(new Error(j.error || 'net'), { code:j.error, status:r.status }); return j;
 }
-const shareFields = s => ({ id:s.id, start:s.start, dist:s.dist, time:s.time, strokes:s.strokes, kcal:s.kcal, b500:s.b500, b1k:s.b1k, b2k:s.b2k, st:s.st, mode:s.mode, wkDesc:s.wkDesc });
+const shareFields = s => ({ id:s.id, start:s.start, dist:s.dist, time:s.time, strokes:s.strokes, kcal:s.kcal, kpk:s.kcal ? s.kcal / kg() : 0, load:s.load, b500:s.b500, b1k:s.b1k, b2k:s.b2k, st:s.st, mode:s.mode, wkDesc:s.wkDesc, lu:s.lu ? s.lu.n : undefined });
 async function pushCrews(pid){
   const p = profiles().find(x => x.id === (pid || cur().id)); if(!p || !crewsOf(p).length || !navigator.onLine) return;
-  ensure(); const since = Date.now() - 400 * DAY, list = sessionsOf(p.id).filter(s => s.start >= since).map(shareFields);
+  ensure(); const since = Date.now() - 400 * DAY, list = sessionsOf(p.id, true).filter(s => s.start >= since).map(shareFields);
   for(const c of crewsOf(p)){ try{ await crewApi('push', { crew:c.id, replace:true, since, sessions:list, name:p.name, color:p.c }, c); c.pushed = Date.now(); }
     catch(e){ if(e.status === 403){ p.crews = crewsOf(p).filter(x => x.id !== c.id); toast('You were removed from ' + c.name); } } }
   saveProfile(p);
@@ -584,7 +591,7 @@ function mountScreen(){
 }
 function open(tab){ mountScreen(); if(tab) TAB = tab; go('progress'); renderProgress(); }
 function renderProgress(){
-  mountScreen(); const all = ensure(), p = cur(), L = all.filter(s => owner(s) === p.id);
+  mountScreen(); const all = ensure(), p = cur(), L = sessionsOf(p.id);
   $t('prChip').innerHTML = chip();
   document.querySelectorAll('#prTabs button').forEach(b => b.classList.toggle('on', b.dataset.v === TAB));
   const box = $t('prBody');
@@ -741,7 +748,7 @@ function boardBody(box, scope, ctx, all, me){
   const meId = ctx ? ctx.meId : me.id;
   const B = BOARDS.find(b => b[0] === BM), R = people.map(x => { const L = x.all.filter(s => s.start >= from && s.start <= now); return { p:x.p, L, v:B[2](L), n:L.length }; });
   const valid = R.filter(r => B[4] ? isFinite(r.v) : true).sort((a, b) => B[4] ? a.v - b.v : b.v - a.v);
-  let h = scope + (ctx ? '<div class="card" style="display:flex;align-items:center;gap:10px"><div style="flex:1"><b style="font-size:18px">' + esc(ctx.info.name) + '</b><div class="muted" style="font-size:13px">' + people.length + ' member' + (people.length === 1 ? '' : 's') + ' · code <b style="letter-spacing:2px">' + ctx.info.code + '</b></div></div><button class="big" id="crInv" style="width:auto;padding:0 16px;margin:0;height:44px;font-size:16px">Invite</button></div>' : '') + '<div class="card"><div class="seg" id="bP"><button data-v="w">Week</button><button data-v="m">Month</button><button data-v="a">All time</button></div>' +
+  let h = scope + (ctx ? '<div class="card" style="display:flex;align-items:center;gap:10px"><div style="flex:1"><b style="font-size:18px">' + esc(ctx.info.name) + '</b><div class="muted" style="font-size:13px">' + people.length + ' member' + (people.length === 1 ? '' : 's') + ' · code <b style="letter-spacing:2px">' + ctx.info.code + '</b></div></div><button class="big" id="crInv" style="width:auto;padding:0 16px;margin:0;height:44px;font-size:16px">Invite</button></div>' + (window.LU ? LU.sharedHtml(ctx.info.lineup) : '') : '') + '<div class="card"><div class="seg" id="bP"><button data-v="w">Week</button><button data-v="m">Month</button><button data-v="a">All time</button></div>' +
     '<div class="mgrid" id="bM">' + BOARDS.map(b => '<button data-v="' + b[0] + '" class="' + (b[0] === BM ? 'on' : '') + '">' + b[1] + '</button>').join('') + '</div>';
   // race lanes: each person rows down their own lane; the boat's position shows how close they are to the leader
   const lead = valid[0], hiB = !B[4];
@@ -793,8 +800,14 @@ function detailExtra(id, sm, data, anchor){
   const cv = wrap.querySelector('.crv'); if(cv) drawCurve(cv, [curveStats(data.curve.a)]);
 }
 
-window.TRN = { snapFor, pushReport, checkin, showCheckin, buildCheckin, crewSheet, pushCrews, crewApi, profiles, cur, owner, mine, kg, setKg, chip, brand, profileSheet, open, renderProgress, afterSave, detailExtra, improve, makePlan, predict, fitness, shape, achieve, challenges, curveStats, align, ensure, sessionLoad };
+function creditedCard(){
+  const L = credited(cur().id).slice(0, 30); if(!L.length) return '';
+  return '<div class="card" style="margin-bottom:10px"><h2>Rowed with your crew</h2><p class="muted" style="font-size:13px;margin-bottom:6px">Boat sessions a crew-mate’s phone recorded with you in the lineup. They count toward your trophies, fitness and the Board.</p>' +
+    L.map(x => '<div class="row"><span>' + new Date(x.start).toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric' }) + ' · <b>' + esc(x.lu || x.crewName) + '</b><br><span class="muted" style="font-size:13px">recorded by ' + esc(x.byName || 'crew') + '</span></span><span style="text-align:right">' + kmTxt(x.dist) + '<br><span class="muted" style="font-size:13px">' + fmtTime(x.time) + (x.dist > 5 ? ' · ' + sTxt(SB() * x.time / x.dist) : '') + '</span></span></div>').join('') + '</div>';
+}
+window.TRN = { credited, creditedCard, refreshBoards, snapFor, pushReport, checkin, showCheckin, buildCheckin, crewSheet, pushCrews, crewApi, profiles, cur, owner, mine, kg, setKg, chip, brand, profileSheet, open, renderProgress, afterSave, detailExtra, improve, makePlan, predict, fitness, shape, achieve, challenges, curveStats, align, ensure, sessionLoad };
 brand(); checkJoinLink();
-const autoCheck = () => { if(document.visibilityState !== 'visible' || location.hash.indexOf('#coach=') === 0) return; setTimeout(() => { try{ if(!document.querySelector('#sheet.on, .sheet.on')) checkin(false); }catch(e){} try{ profiles().forEach(p => pushReport(p.id)); }catch(e){} }, 1500); };
+const autoCheck = () => { if(document.visibilityState !== 'visible' || location.hash.indexOf('#coach=') === 0) return; setTimeout(() => { try{ if(!document.querySelector('#sheet.on, .sheet.on')) checkin(false); }catch(e){} try{ profiles().forEach(p => pushReport(p.id)); }catch(e){} try{ refreshBoards(); }catch(e){} }, 1500); };
+async function refreshBoards(){ if(!navigator.onLine) return; for(const p of profiles()) for(const c of (p.crews || [])){ const b = LS.get('sp_crewb_' + c.id, null); if(b && Date.now() - (b.at || 0) < 15 * 60000) continue; try{ await crewBoard(c); }catch(e){} } }
 autoCheck(); document.addEventListener('visibilitychange', autoCheck); window.addEventListener('hashchange', checkJoinLink);
 })();
