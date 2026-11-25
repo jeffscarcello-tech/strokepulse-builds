@@ -48,7 +48,7 @@ body.glare .tabs{box-shadow:0 4px 10px rgba(0,0,0,.08)}
 .ach .tier{position:absolute;top:8px;right:8px;font-size:11px;font-weight:900;padding:2px 7px;border-radius:999px;color:#000}
 .ach .locked{filter:grayscale(1);opacity:.45}
 .mgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:10px 0 14px}
-.mgrid button{min-width:0;padding:9px 4px;border-radius:10px;font-weight:800;font-size:13px;background:var(--bg);color:var(--dim);border:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mgrid button{min-width:0;min-height:40px;padding:6px 4px;border-radius:10px;font-weight:800;font-size:13px;line-height:1.15;background:var(--bg);color:var(--dim);border:1px solid var(--line);white-space:normal;overflow-wrap:anywhere}
 .mgrid button.on{background:var(--fg);color:var(--bg);border-color:var(--fg)}
 .lanes{display:flex;flex-direction:column;gap:10px}
 .lane{position:relative;padding:12px 12px 12px 14px;border-radius:16px;background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.01));border:1px solid var(--line);overflow:hidden}
@@ -375,13 +375,13 @@ const pbarHtml = (p, c) => '<div class="pbar"><i style="width:' + Math.round(p *
 const BOARDS = [
   ['m', 'Metres', L => L.reduce((a, s) => a + s.dist, 0), kmTxt],
   ['n', 'Sessions', L => L.length, v => String(v)],
-  ['d', 'Active days', L => new Set(L.map(s => dayKey(s.start))).size, v => String(v)],
+  ['d', 'Days rowed', L => new Set(L.map(s => dayKey(s.start))).size, v => String(v)],
   ['h', 'Hours', L => L.reduce((a, s) => a + s.time, 0) / 3600, v => v.toFixed(1) + ' h'],
-  ['b5', 'Best 500 m', L => Math.min(...L.map(s => s.b500 || Infinity)), sTxt, true],
+  ['b5', 'Best 500', L => Math.min(...L.map(s => s.b500 || Infinity)), sTxt, true],
   ['b2', 'Best 2k', L => Math.min(...L.map(s => s.b2k || Infinity)), sTxt, true],
   ['k', 'Calories', L => L.reduce((a, s) => a + (s.kcal || 0), 0), v => Math.round(v).toLocaleString()],
-  ['st', 'Consistency', L => Math.max(0, ...L.map(s => s.st || 0)), v => v ? String(v) : '–'],
-  ['im', 'Most improved', L => { const o = L.filter(s => s.b500).sort((a, b) => a.start - b.start); return o.length >= 2 ? o[0].b500 - Math.min(...o.map(s => s.b500)) : 0; }, v => v ? '−' + v.toFixed(1) + ' s' : '–']
+  ['st', 'Steadiest', L => Math.max(0, ...L.map(s => s.st || 0)), v => v ? String(v) : '–'],
+  ['im', 'Improved', L => { const o = L.filter(s => s.b500).sort((a, b) => a.start - b.start); return o.length >= 2 ? o[0].b500 - Math.min(...o.map(s => s.b500)) : 0; }, v => v ? '−' + v.toFixed(1) + ' s' : '–']
 ];
 const JOURNEY = [[42195, 'Marathon'], [100000, 'Century'], [200000, '200 km'], [416000, 'Length of Lake Winnipeg'], [1000000, '1,000 km'], [2500000, '2,500 km'], [5000000, '5,000 km']];
 function rows(period, all){
