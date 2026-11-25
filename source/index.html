@@ -176,6 +176,9 @@ body.glare .btn-go,body.night .btn-go{background:var(--good)!important}body.glar
 body.glare .status .brand,body.night .status .brand{background:none;color:var(--acc)}
 .f .lab{font-size:12px;letter-spacing:1.5px}
 canvas{border-radius:12px}
+/* maps draw their own layers (Google puts the boat path on a see-through canvas): keep the app's chart styling off them */
+.map canvas{width:auto;background:none!important;border-radius:0!important}
+.map img{max-width:none!important;border-radius:0!important}
 input[type=number],input[type=text].mini,input.codein{border-radius:10px;border-color:var(--edge)}
 .numin{width:84px!important}
 .sheet .in{border-radius:22px 22px 0 0;border-top:1px solid var(--edge)}
