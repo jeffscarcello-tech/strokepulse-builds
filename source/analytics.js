@@ -541,7 +541,7 @@ function historyDecorate(){
   const box = $a('histList'); if(!box) return; const { idx, pb } = ensureCache();
   box.classList.toggle('picking', picking);
   let tools = $a('histTools');
-  if(!tools){ tools = document.createElement('div'); tools.id = 'histTools'; tools.style.cssText = 'display:flex;gap:8px;padding:10px 12px 0'; box.parentNode.insertBefore(tools, box); }
+  if(!tools){ tools = document.createElement('div'); tools.id = 'histTools'; tools.style.cssText = 'display:flex;gap:8px;padding:10px 12px 12px;background:var(--bg);border-bottom:1px solid var(--edge,var(--line));box-shadow:0 6px 14px rgba(0,0,0,.3);position:relative;z-index:3'; box.parentNode.insertBefore(tools, box); }
   const hasCox = idx.some(s => s.cox);
   if($a('hChip')) $a('hChip').innerHTML = window.TRN && TRN.profiles().length > 1 ? TRN.chip() : '';
   tools.innerHTML = (idx.filter(s => !window.TRN || TRN.mine(s)).length >= 2 ? '<button class="htool" id="cmpStart">⇄ Compare</button>' : '') + (hasCox ? '<button class="htool" id="coxRep">🎙 Cox report</button>' : '');

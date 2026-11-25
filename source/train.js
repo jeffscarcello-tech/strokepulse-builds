@@ -14,7 +14,10 @@ const css = document.createElement('style');
 css.textContent = `
 .pchip{display:inline-flex;align-items:center;gap:6px;padding:6px 12px 6px 6px;border-radius:999px;background:var(--panel);border:1px solid var(--line);font-weight:800;font-size:15px;color:var(--fg)}
 .av{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;font-size:12px;font-weight:900;color:#000;flex:none}
-.tabs{display:flex;gap:6px;padding:10px 12px 0}
+.tabs{display:flex;gap:6px;padding:10px 12px 12px;background:var(--bg);border-bottom:1px solid var(--edge,var(--line));box-shadow:0 6px 14px rgba(0,0,0,.35);position:relative;z-index:3}
+body.glare .tabs{box-shadow:0 4px 10px rgba(0,0,0,.08)}
+.tabs button{border:1px solid var(--edge,var(--line))}
+.tabs button.on{border-color:transparent;box-shadow:0 3px 10px rgba(31,116,255,.35)}
 .tabs button{flex:1;height:40px;border-radius:10px;background:var(--panel);font-weight:800;color:var(--dim);font-size:15px}
 .tabs button.on{background:var(--acc);color:#fff}
 .bignum{font-size:44px;font-weight:900;font-variant-numeric:tabular-nums;line-height:1}
