@@ -207,6 +207,7 @@ function beatTick(){
     o.connect(g); g.connect(AC.destination); o.start(BT.next); o.stop(BT.next + 0.07); BT.next += period;
   }
 }
+function beatOff(){ if(!CS.beat) return; CS.beat = false; saveCS(); clearInterval(BT.timer); renderBar(); }
 function beatToggle(){ audioUnlock(); CS.beat = !CS.beat; saveCS(); BT.next = AC ? AC.currentTime + 0.05 : 0; clearInterval(BT.timer); if(CS.beat) BT.timer = setInterval(beatTick, 25); renderBar(); }
 
 /* ================= cox screen pieces ================= */
@@ -292,8 +293,9 @@ async function sessionStart(){
   if(await micOn()){ recStart(); renderBar(); }
   PL.sid = null; liveConnect();
 }
-function sessionCancel(){ if(M.recording){ const rec = M.recId; recStop().then(() => idbDelRec(rec)); } }
+function sessionCancel(){ beatOff(); if(M.recording){ const rec = M.recId; recStop().then(() => idbDelRec(rec)); } }
 function sessionStop(r){
+  beatOff();
   if(Object.values(CS.crew.names || {}).some(n => n)) r.crew = { boat:CS.crew.boat, names:Object.assign({}, CS.crew.names) };
   if(!CS.on) return;
   if(!M.recording) return;
@@ -366,12 +368,14 @@ async function renderAnalysis(box, opts){
     if(waiting && tries++ < 40){ $c('cxaStat') && ($c('cxaStat').textContent = 'Transcribing ' + waiting + ' of ' + chunks.length + ' minutes…'); if(tries === 8 && retx) retx(); setTimeout(load, 6000); }
     draw();
   };
-  let lastSig = '';
+  let lastSig = '', pendingDraw = false;
   const draw = () => {
     if(!box.isConnected) return;
     const sig = chunks.map(c => c.idx + c.status + (c.tx || []).length).join('|');
     if(sig === lastSig && $c('cxaChart')) return;   // nothing new: leave the page (and the scroll position) alone
-    lastSig = sig;
+    if(P.playing && $c('cxaChart')){ pendingDraw = true; const st = $c('cxaStat'); if(st) st.textContent = 'Transcript updated — it will show when you pause.'; return; }
+    pendingDraw = false; lastSig = sig;
+    const scroller = box.closest('.body'), keepTop = scroller ? scroller.scrollTop : 0;
     const A = analyse(data, chunks), smp = data.samples || [];
     const pct = A.T ? Math.round(A.talk / A.T * 100) : 0, failed = chunks.filter(c => c.status === 'error' || c.status === 'no_ai').length;
     let h = '<div class="card"><h2>Cox Calls</h2>' + (chunks.some(c => c.status === 'new' || c.status === 'local') ? '<p class="muted" id="cxaStat">' + (chunks.some(c => c.status === 'local') ? 'Uploading the recording — transcript follows.' : 'Still transcribing — more calls will appear.') + '</p>' : '') +
@@ -388,6 +392,7 @@ async function renderAnalysis(box, opts){
     if(A.top.length) h += '<div class="card"><h2>Most used</h2>' + A.top.map(([p, n]) => '<div class="row"><span>“' + esc(p) + '”</span><b>' + n + '×</b></div>').join('') + '</div>';
     if(smp.some(s => s[1] != null)) h += '<div class="card"><h2>Course replay</h2><canvas id="cxaTrack" height="260"></canvas><p class="muted" style="margin-top:6px">Press ▶ above to hear the cox while the dot follows the boat.</p></div>';
     box.innerHTML = h;
+    if(scroller) scroller.scrollTop = keepTop;
     wire(A, smp);
   };
   const callRow = c => '<div class="call" data-t="' + c.t.toFixed(1) + '"><span class="tm">' + fmtTime(Math.max(0, c.t)) + '</span><span class="tx"><span class="chip" style="background:' + c.cat.c + '">' + c.cat.k + '</span> ' + esc(c.text) + '</span><span class="fx">' + fxHtml(c) + '</span></div>';
@@ -405,7 +410,7 @@ async function renderAnalysis(box, opts){
     ui();
   }
   P.audio.addEventListener('timeupdate', () => { if(P.cur){ P.t = P.cur.t0 + P.audio.currentTime; ui(); } });
-  P.audio.addEventListener('ended', () => { if(!P.cur) return; const next = chunks.find(c => c.idx === P.cur.idx + 1); if(next && P.playing) playAt(next.t0); else { P.playing = false; ui(); } });
+  P.audio.addEventListener('ended', () => { if(!P.cur) return; const next = chunks.find(c => c.idx === P.cur.idx + 1); if(next && P.playing) playAt(next.t0); else { P.playing = false; ui(true); if(pendingDraw) draw(); } });
   let A0 = null, smp0 = [];
   let uiT = 0;
   function ui(force){
@@ -437,7 +442,7 @@ async function renderAnalysis(box, opts){
   }
   function wire(A, smp){
     A0 = A; smp0 = smp;
-    $c('cxaPlay').onclick = () => { if(P.playing){ P.audio.pause(); P.playing = false; ui(true); } else playAt(P.t); };
+    $c('cxaPlay').onclick = () => { if(P.playing){ P.audio.pause(); P.playing = false; ui(true); if(pendingDraw) draw(); } else playAt(P.t); };
     $c('cxaPos').onchange = () => { P.t = +$c('cxaPos').value; if(P.playing) playAt(P.t); else ui(true); };
     $c('cxaChart').onclick = e => { const r = e.target.getBoundingClientRect(); P.t = (e.clientX - r.left) / r.width * (A.T || 1); playAt(P.t); };
     box.querySelectorAll('.call').forEach(el => el.onclick = () => { P.t = Math.max(0, +el.dataset.t - 0.3); playAt(P.t); });
