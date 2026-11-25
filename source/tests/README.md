@@ -13,4 +13,5 @@
 - `browser/email.py` — weekly email card on/off and the snapshot it sends. v3.11
 - `browser/lineup.py` — lineups, crew credit across two phones, shared lineup, fastest, seat racing, attendance, boats. v3.15
 - `browser/map_jump.py` — map skips a stale far-away fix; a demo session never starts at the phone's real position. v3.18
+- `browser/pause_marker.py` — off-screen pause: toast, saved gaps, detail box, map marker, History tag, phone-closed session; 390 and 1280 px. v3.19
 - `browser/train_seed.py` — shared sample sessions used by the browser tests.

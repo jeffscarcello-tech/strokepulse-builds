@@ -14,6 +14,7 @@ css.textContent = `
 .mfoot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;flex-wrap:wrap}
 .mfoot span{font-size:12px;font-variant-numeric:tabular-nums}
 .gbtn{display:inline-block;padding:8px 12px;border-radius:10px;background:var(--acc);color:#fff;font-weight:800;font-size:14px;text-decoration:none}
+.pausemk{width:22px!important;height:22px!important;border-radius:50%;background:#8a97a6;border:2px solid #fff;color:#fff;font-size:11px;line-height:18px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.5)}
 .pin .pinb{width:28px;height:28px;border-radius:50% 50% 50% 0;background:#ea4335;transform:rotate(-45deg);border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.5);margin-top:2px}
 .map{height:300px}
 @media (min-width:700px){.map{height:420px}}
@@ -234,7 +235,9 @@ async function googleMap(el, tracks, nSess, type, sel, opts){
     setType:t => map.setMapTypeId(t),
     select:(a, b) => { pin.setPosition({ lat:a, lng:b }); map.panTo({ lat:a, lng:b }); },
     dot:(a, b) => { if(!dot) dot = new gm.Marker({ map, position:{ lat:a, lng:b }, icon:dotIcon('#ffffff', 8), zIndex:20, clickable:false }); else dot.setPosition({ lat:a, lng:b }); },
-    setCalls:list => { callMk.forEach(m => m.setMap(null)); callMk = list.map(c => new gm.Marker({ map, position:{ lat:c.lat, lng:c.lon }, icon:dotIcon(c.c, 5), title:c.text, zIndex:8 })); } };
+    setCalls:list => { callMk.forEach(m => m.setMap(null)); callMk = list.map(c => new gm.Marker({ map, position:{ lat:c.lat, lng:c.lon }, icon:dotIcon(c.c, 5), title:c.text, zIndex:8 })); },
+    setPauses:list => list.forEach(p => { new gm.Polyline({ map, path:[ll(p.a), ll(p.b)], strokeOpacity:0, icons:[{ icon:{ path:'M 0,-1 0,1', strokeOpacity:1, strokeColor:'#ffffff', scale:3 }, offset:'0', repeat:'12px' }], zIndex:4 });
+      new gm.Marker({ map, position:ll(p.a), label:{ text:'⏸', fontSize:'12px' }, icon:dotIcon('#8a97a6', 10), title:p.text, zIndex:9 }); }) };
   return M;
 }
 async function leafletMap(el, tracks, nSess, type, sel, opts){
@@ -265,7 +268,9 @@ async function leafletMap(el, tracks, nSess, type, sel, opts){
   const M = { kind:'leaflet', map, setType,
     select:(a, b) => pin.setLatLng([a, b]),
     dot:(a, b) => { if(!dot) dot = L.circleMarker([a, b], { radius:8, color:'#000', weight:2, fillColor:'#fff', fillOpacity:1 }).addTo(map); else dot.setLatLng([a, b]); },
-    setCalls:list => { calls.clearLayers(); list.forEach(c => L.circleMarker([c.lat, c.lon], { radius:5, color:'#000', weight:1, fillColor:c.c, fillOpacity:1 }).bindTooltip(esc(c.text)).addTo(calls)); } };
+    setCalls:list => { calls.clearLayers(); list.forEach(c => L.circleMarker([c.lat, c.lon], { radius:5, color:'#000', weight:1, fillColor:c.c, fillOpacity:1 }).bindTooltip(esc(c.text)).addTo(calls)); },
+    setPauses:list => list.forEach(p => { L.polyline([p.a, p.b], { color:'#fff', weight:3, dashArray:'4 8', className:'pauseline' }).addTo(map);
+      L.marker(p.a, { icon:L.divIcon({ className:'pausemk', html:'⏸', iconSize:[22, 22], iconAnchor:[11, 11] }), title:p.text }).bindTooltip(esc(p.text)).addTo(map); }) };
   return M;
 }
 function mapCursor(t){
@@ -523,11 +528,29 @@ function detailHtml(sm, data){
     stat('Calories', Math.round(A.kcal) + ' kcal') + stat('Max Rate', A.maxRate ? A.maxRate.toFixed(0) : '–') + stat('Workout', esc(sm.wkDesc)) + '</div>' +
     '<div class="grid3" style="margin-top:10px">' + stat('Consistency', A.steady ? A.steady.score + ' <span style="font-size:12px" class="muted">' + steadyWord(A.steady.score) + '</span>' : '–') + stat('Split ±', A.steady ? A.steady.sdS.toFixed(1) + ' s' : '–') + stat('Rate ±', A.steady && A.steady.sdR ? A.steady.sdR.toFixed(1) : '–') + '</div>' +
     '<div class="grid3" style="margin-top:10px">' + stat('Best 500 m', fs(b[500])) + stat('Best 1 km', fs(b[1000])) + stat('Best 2 km', fs(b[2000])) + '</div>' +
+    pauseHtml(data) +
     '<div id="anaWx">' + wxHtml(data.weather, data.samples || []) + '</div>' +
     '<textarea class="notes" id="anaNotes" placeholder="Notes — who was in the boat, conditions, how it felt…">' + esc(data.notes || '') + '</textarea>' +
     '<p class="muted" style="margin-top:6px;font-size:12px">Calories are an estimate per rower from stroke rate and the rower’s weight (Menu).</p></div>' +
     '<div class="card"><h2>Map</h2><div class="map" id="anaMap"></div><div class="legend" id="anaLegend"></div></div>' +
     (data.cox ? '' : '<div class="card" id="anaChart"><h2>Chart</h2></div>');
+}
+/* times the app was off the screen (the phone pauses web apps there) */
+function pauseHtml(data){
+  const g = data.gaps || []; if(!g.length && data.closed == null) return '';
+  const tot = g.reduce((a, x) => a + x[1] - x[0], 0);
+  let h = '<div class="pausebox" id="anaPause">';
+  if(g.length) h += '<b>⏸ Paused ' + (g.length > 1 ? g.length + ' times · ' : '') + fmtTime(tot) + (g.length > 1 ? ' total' : '') + '</b><br>' +
+    g.map(x => 'at ' + fmtTime(x[0]) + ' for ' + fmtTime(x[1] - x[0])).join(' · ') +
+    '<div class="muted" style="font-size:12px;margin-top:4px">The app was off the screen. Strokes and rate weren’t recorded then; distance was filled in with a straight line (dashed on the map).</div>';
+  if(data.closed != null) h += (g.length ? '<div style="margin-top:6px">' : '') + '<b>⏹ Ended at ' + fmtTime(data.closed) + '</b> — the phone closed the app while it was off the screen.' + (g.length ? '</div>' : '');
+  return h + '</div>';
+}
+function mapPauses(data){
+  if(!MAP || !MAP.track || !MAP.setPauses) return; const t = MAP.track, out = [];
+  const at = s => { let p = null; for(const q of t){ if(q[0] > s) break; p = q; } return p; }, after = s => t.find(q => q[0] >= s);
+  for(const g of data.gaps || []){ const a = at(g[0]), b = after(g[1]); if(a && b) out.push({ a:[a[1], a[2]], b:[b[1], b[2]], text:'Paused ' + fmtTime(g[1] - g[0]) + ' (app off screen)' }); }
+  MAP.setPauses(out);
 }
 function saveData(id, data){ LS.set('sp_s_' + id, data); const idx = LS.get('sp_index', []); const s = idx.find(x => x.id === id); if(s){ s.synced = false; LS.set('sp_index', idx); } if(typeof syncNow === 'function') setTimeout(syncNow, 300); }
 async function detailWire(id, sm, data){
@@ -544,7 +567,7 @@ async function detailWire(id, sm, data){
   if(data.weather && data.weather.at){ const t = cleanTrack((data.samples || []).filter(p => p[1] != null)); const near = t.some(p => Math.abs(p[1] - data.weather.at[0]) < 0.02 && Math.abs(p[2] - data.weather.at[1]) < 0.03); if(t.length && !near){ delete data.weather; saveData(id, data); } }
   const wxAt = async at => { const my = ++wxSeq; if(!navigator.onLine) return; try{ const wx = await fetchWeather(sm, data, at); if(wx && my === wxSeq){ data.weather = wx; saveData(id, data); if($a('anaWx')) $a('anaWx').innerHTML = wxHtml(wx, data.samples || []); } }catch(e){} };
   drawMap($a('anaMap'), [{ samples:data.samples || [] }], { legendEl:$a('anaLegend'), sel:data.weather && data.weather.at, onSelect:(a, b) => { if($a('anaWx')) $a('anaWx').innerHTML = '<div class="wx">Getting the weather there…</div>'; wxAt([a, b]); } })
-    .then(m => { MAP = m; if(m && pendingCalls) mapCalls(pendingCalls); }).catch(() => {});
+    .then(m => { MAP = m; if(m) mapPauses(data); if(m && pendingCalls) mapCalls(pendingCalls); }).catch(() => {});
   if(!data.weather) wxAt(null);
 }
 let pendingCalls = null;
@@ -567,7 +590,7 @@ function historyDecorate(){
   box.querySelectorAll('.item').forEach(it => {
     const id = +it.dataset.id, s = idx.find(x => x.id === id); if(!s) return;
     if(!it.querySelector('.tick')){ const t = document.createElement('span'); t.className = 'tick'; t.textContent = '✓'; it.querySelector('.t1').prepend(t);
-      const extra = document.createElement('div'); extra.className = 't2'; extra.innerHTML = (s.kcal ? s.kcal + ' kcal' : '') + (s.b500 ? ' · best 500 m ' + fs(s.b500) : '') + ' ' + pbBadges(s, pb); it.appendChild(extra); }
+      const extra = document.createElement('div'); extra.className = 't2'; extra.innerHTML = (s.kcal ? s.kcal + ' kcal' : '') + (s.b500 ? ' · best 500 m ' + fs(s.b500) : '') + (s.paused ? ' · ⏸ paused' + (s.paused > 1 ? ' ×' + s.paused : '') : '') + ' ' + pbBadges(s, pb); it.appendChild(extra); }
     it.classList.toggle('pick', picked.includes(id));
     it.onclick = e => { if(!picking){ openDetail(id); return; } e.preventDefault(); if(picked.includes(id)) picked = picked.filter(x => x !== id); else if(picked.length < 4) picked.push(id); else toast('Up to 4 sessions'); historyDecorate(); renderBar(); };
   });

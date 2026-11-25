@@ -5,7 +5,7 @@ GPS speed coach for iPhone (rowing and paddling), like the NK SpeedCoach GPS, pl
 ## Installed (checked Nov 25 2026, 11:20 AM Eastern)
 | Site | Address | App build | Loader | How to check |
 |---|---|---|---|---|
-| Test | https://strokepulsetest.jeffscarcello.workers.dev | **sp-20261125r (v3.18)** | **l8** (SHA-256 8cac9229…) | D1 `strokepulsetest`: `SELECT k, v FROM appmeta WHERE k IN ('ghbuild','ghlast')`; loader via Cloudflare content hash; `/api/health` on the site |
+| Test | https://strokepulsetest.jeffscarcello.workers.dev | **sp-20261125s (v3.19)** | **l8** (SHA-256 8cac9229…) | D1 `strokepulsetest`: `SELECT k, v FROM appmeta WHERE k IN ('ghbuild','ghlast')`; loader via Cloudflare content hash; `/api/health` on the site |
 | Live | not set up yet | — | — | — |
 
 ## Newest files
@@ -22,6 +22,7 @@ GPS speed coach for iPhone (rowing and paddling), like the NK SpeedCoach GPS, pl
   - Tested in a browser at 390 px (iPhone and Android) and 1280 px: item tap-sized, box opens, fits and focuses the first box, Open email closes it and the backup toast shows. Address, subject, CRLF line breaks and the 1) 2) • order with line breaks removed were all checked, plus counts right, no names, no page errors. Earlier server and browser tests still pass.
   - Not tested: a real email from a real phone, and Gmail on iPhone.
 
+- **v3.19 pause marker**: if the app goes off the screen during a row for 3 s or more, it's marked as a pause: a toast on return, a ⏸ box in the session (when and how long; strokes and rate not recorded; distance bridged), a ⏸ marker and dashed line on the map, and "⏸ paused" in History. If the phone closes the app while it's off screen, the recovered session says where it ended. Tested: `tests/browser/pause_marker.py` at 390 and 1280 px (all pass) plus map_jump, ana, train, report_problem and server tests. Not tested: a real iPhone locking mid-row.
 - **v3.18 demo/map jump fix**: a demo session used to start at the phone's real position (Winnipeg) before jumping to the demo boat. Demo now forgets the real fix at START, and the map, weather and saved weather skip any GPS jump faster than a boat can go. Tested: `tests/browser/map_jump.py` (map starts at the boat; demo session's first point is a demo point; no errors) plus ana, train, lineup, crew, goal, email, report_problem and server tests. Not tested: a real on-water row.
 - **v3.17 map fix**: the app's chart style (solid dark background, full width on every canvas) was covering Google's see-through boat-path layer, so tiles under the path showed black. Map canvases are now exempt. Tested: map canvases are see-through at their own size and charts are unchanged; map views still switch. Not tested: the real Google map (it can't load here), so please check it on your phone.
 
@@ -32,7 +33,7 @@ GPS speed coach for iPhone (rowing and paddling), like the NK SpeedCoach GPS, pl
 - Real-world checks: rowing on the water, the real Google map, the stroke curve from the phone's sensor, crew credit between real phones.
 
 ## Next version numbers
-- App: sp-20261125r (v3.18) or the next day's date letter a. Loader: l9.
+- App: sp-20261125t (v3.20) or the next day's date letter a. Loader: l9.
 
 ## Resources (StrokePulse owns only these)
 - GitHub repo `jeffscarcello-tech/strokepulse-builds` (public). Auto-update: push to `test/` → webhook → `strokepulse-updater` installs into D1.
