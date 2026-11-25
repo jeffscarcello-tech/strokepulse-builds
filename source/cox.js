@@ -156,7 +156,7 @@ function liveClose(){ if(L.ws){ try{ L.ws.close(); }catch(e){} L.ws = null; } }
 function send(o){ if(L.ws && L.up) try{ L.ws.send(typeof o === 'string' || o instanceof Uint8Array ? o : JSON.stringify(o)); }catch(e){} }
 function liveAudio(f32){
   if(COACH_MODE){ if(CH.talking && L.up) send(encodeFrame(f32, AC.sampleRate)); return; }
-  if(L.up && L.listening > 0 && L.ws.bufferedAmount < 64000) send(encodeFrame(f32, AC.sampleRate));
+  if(!M.muted && L.up && L.listening > 0 && L.ws.bufferedAmount < 64000) send(encodeFrame(f32, AC.sampleRate));
 }
 function telemetry(){
   if(COACH_MODE || !L.up || L.coaches < 1) return;
@@ -225,7 +225,12 @@ function mountCox(){
   live.insertBefore(bar, $c('controls'));
   const pr = document.createElement('div'); pr.className = 'prompt'; pr.id = 'coxPrompt'; pr.onclick = () => pr.classList.remove('on'); document.body.appendChild(pr);
   const cm = document.createElement('div'); cm.className = 'coachmsg'; cm.id = 'coachMsg'; cm.onclick = () => cm.classList.remove('on'); document.body.appendChild(cm);
-  $c('cbMic').onclick = async () => { if(!M.stream){ await micOn(); toast(CS.pass === '1' ? 'Mic on — your voice goes to the boat speakers' : 'Mic on (speakers off in Settings)'); return; } M.muted = !M.muted; setPass(); renderBar(); toast(M.muted ? 'Speakers muted (still recording)' : 'Speakers on'); };
+  $c('cbMic').onclick = async () => {
+    if(!M.stream){ M.muted = false; if(await micOn()) toast(CS.pass === '1' ? 'Mic on — your voice goes to the boat speakers' : 'Mic on (speakers off in Settings)'); return; }
+    if(!M.recording){ M.muted = false; micOff(); toast('Mic off'); return; }   // no session: switch the mic right off
+    M.muted = !M.muted; setPass(); renderBar();   // during a session the mic keeps recording; mute silences speakers and coach
+    toast(M.muted ? 'Muted — speakers and coach can\u2019t hear you (still recording)' : 'Mic live again');
+  };
   $c('cbBeat').onclick = beatToggle;
   $c('cbLive').onclick = () => { if(!CS.link){ toast('Make a coach link first: Settings › Cox Mode'); return; } if(!L.up){ liveConnect(); toast('Connecting to coach…'); return; } toast(L.listening ? 'Coach is listening live' : (L.coaches ? 'Coach is connected (not listening)' : 'Waiting for the coach to open the link')); };
   // menu + settings cards
@@ -236,7 +241,7 @@ function mountCox(){
 function renderBar(){
   const cb = $c('coxBtn'); if(cb){ cb.textContent = 'COX'; cb.style.background = CS.on ? 'var(--good)' : ''; cb.style.color = CS.on ? '#00210f' : ''; }
   const bar = $c('coxBar'); if(!bar) return; bar.classList.toggle('on', !!CS.on);
-  const mic = $c('cbMic'); mic.className = !M.stream ? '' : (M.muted ? 'warn' : 'hot'); mic.textContent = !M.stream ? '🎤 MIC OFF' : (M.muted ? '🔇 MUTED' : (M.recording ? '● REC' : '🎤 LIVE'));
+  const mic = $c('cbMic'); mic.className = !M.stream ? '' : (M.muted ? 'warn' : 'hot'); mic.textContent = !M.stream ? '🎤 MIC OFF' : (M.muted ? '🔇 MUTED' : (M.recording ? '● REC' : '🎤 MIC ON'));
   const bt = $c('cbBeat'); bt.className = CS.beat ? 'hot' : ''; bt.textContent = '♪ ' + (CS.beepRate || 28);
   const lv = $c('cbLive'); lv.className = L.listening ? 'live' : ''; lv.textContent = !CS.link ? '📡 NO COACH' : (!L.up ? '📡 OFFLINE' : (L.talking ? '🗣 COACH' : (L.listening ? '🎧 LISTENING' : (L.coaches ? '📡 COACH ON' : '📡 READY'))));
 }
