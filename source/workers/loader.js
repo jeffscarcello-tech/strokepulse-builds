@@ -1,6 +1,6 @@
 // StrokePulse site Worker (loader) — serves the app installed in D1 by strokepulse-updater,
 // plus cloud backup, Cox mode recordings/transcripts, private coach links, and the live coach relay.
-const LOADER = 'l4';
+const LOADER = 'l5';
 let appCache = null, appChecked = 0;
 async function ensure(db) {
   await db.prepare('CREATE TABLE IF NOT EXISTS appmeta (k TEXT PRIMARY KEY, v TEXT NOT NULL)').run();
@@ -97,7 +97,9 @@ async function transcribe(env, k, sid, idx) {
   if (!env.AI) { await db.prepare("UPDATE cox_audio SET status = 'no_ai' WHERE k = ?1 AND sid = ?2 AND idx = ?3").bind(k, sid, idx).run(); return 'no_ai'; }
   try {
     const r = await env.AI.run('@cf/openai/whisper-large-v3-turbo', { audio: b64(bytes), initial_prompt: PROMPT, vad_filter: true, language: 'en' });
-    const segs = ((r && r.segments) || []).map(s => ({ s: +(+s.start).toFixed(2), e: +(+s.end).toFixed(2), t: String(s.text || '').trim() })).filter(s => s.t);
+    // keep every word's own start/end time so calls can be split at pauses and timed at the keyword
+    const segs = ((r && r.segments) || []).map(s => ({ s: +(+s.start).toFixed(2), e: +(+s.end).toFixed(2), t: String(s.text || '').trim(),
+      w: (s.words || []).map(w => [+(+w.start).toFixed(2), +(+w.end).toFixed(2), String(w.word || '').trim()]).filter(w => w[2]) })).filter(s => s.t);
     await db.prepare("UPDATE cox_audio SET status = 'done', tx = ?4, updated = ?5 WHERE k = ?1 AND sid = ?2 AND idx = ?3").bind(k, sid, idx, JSON.stringify(segs), Date.now()).run();
     return 'done';
   } catch (e) {
@@ -146,7 +148,9 @@ async function cox(request, env, ctx, op, url) {
     return json({ ok: true });
   }
   if (op === 'retx' && request.method === 'POST') {   // retry any chunk that failed or never finished
-    const rows = (await db.prepare("SELECT idx FROM cox_audio WHERE k = ?1 AND sid = ?2 AND status != 'done' AND updated < ?3").bind(k, sid, Date.now() - 60000).all()).results || [];
+    const all = url.searchParams.get('all') === '1';   // all=1: redo finished chunks too (older transcripts without word timings)
+    const rows = (await (all ? db.prepare("SELECT idx FROM cox_audio WHERE k = ?1 AND sid = ?2 AND (status != 'done' OR tx NOT LIKE '%\"w\":%')").bind(k, sid)
+      : db.prepare("SELECT idx FROM cox_audio WHERE k = ?1 AND sid = ?2 AND status != 'done' AND updated < ?3").bind(k, sid, Date.now() - 60000)).all()).results || [];
     for (const r of rows.slice(0, 20)) ctx.waitUntil(transcribe(env, k, sid, r.idx));
     return json({ retried: rows.length });
   }

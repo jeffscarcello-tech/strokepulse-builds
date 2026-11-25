@@ -84,7 +84,7 @@ console.log('ALL SERVER TESTS PASSED');
   const KEY = 'COXX-ABCD-EFGH-JKMN-PQRS';
   const waits = [];
   const ctx = { waitUntil: p => waits.push(p) };
-  env.AI = { run: async (model, inp) => { assert.equal(model, '@cf/openai/whisper-large-v3-turbo'); assert.ok(inp.audio.length > 100); return { text: 'Power ten now', segments: [{ start: 1.5, end: 3.2, text: ' Power ten now' }, { start: 10, end: 11, text: 'Legs' }] }; } };
+  env.AI = { run: async (model, inp) => { assert.equal(model, '@cf/openai/whisper-large-v3-turbo'); assert.ok(inp.audio.length > 100); return { text: 'Power ten now', segments: [{ start: 1.5, end: 3.2, text: ' Power ten now', words: [{ word: ' Power', start: 1.5, end: 1.9 }, { word: ' ten', start: 1.9, end: 2.3 }, { word: ' now', start: 2.6, end: 3.2 }] }, { start: 10, end: 11, text: 'Legs' }] }; } };
   const req = (path, opt = {}) => loader.fetch(new Request('https://x' + path, opt), env, ctx);
   const audio = new Uint8Array(4000).map((_, i) => i % 251);
   let r = await req('/api/sync/put', { method: 'POST', headers: { 'X-Sync-Key': KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ id: 500, summary: { start: 1, cox: true }, data: { samples: [], cox: { rec: 'r1' } } }) });
@@ -93,6 +93,8 @@ console.log('ALL SERVER TESTS PASSED');
   assert.equal(r.status, 200); await Promise.all(waits);
   let c = await (await req('/api/cox/chunks?sid=500', { headers: { 'X-Sync-Key': KEY } })).json();
   assert.equal(c.chunks.length, 1); assert.equal(c.chunks[0].status, 'done'); assert.equal(c.chunks[0].t0, -2.5); assert.equal(c.chunks[0].tx[0].t, 'Power ten now');
+  assert.deepEqual(c.chunks[0].tx[0].w, [[1.5, 1.9, 'Power'], [1.9, 2.3, 'ten'], [2.6, 3.2, 'now']], 'word timings kept');
+  r = await req('/api/cox/retx?all=1&sid=500', { method: 'POST', headers: { 'X-Sync-Key': KEY } }); assert.equal(r.status, 200);
   r = await req('/api/cox/audio?sid=500&idx=0', { headers: { 'X-Sync-Key': KEY } });
   assert.equal(r.headers.get('content-type'), 'audio/mp4'); assert.equal((await r.arrayBuffer()).byteLength, 4000);
   // crew cannot read without the link

@@ -137,6 +137,12 @@ canvas{width:100%;display:block;border-radius:8px;background:var(--bg)}
       <p class="muted" style="padding-top:8px">The Rate and Split boxes turn green when you're on target and red when you're off, with LOW / HIGH or SLOW / FAST as a reminder. Leave blank to turn off.</p>
       <button class="big alt" id="tClear" style="height:44px;font-size:16px">Clear targets</button>
     </div>
+    <div class="card"><h2>Distance Alerts</h2>
+      <div class="row"><span>Alert every</span><div class="seg" id="daEvery"><button data-v="0">Off</button><button data-v="100">100 m</button><button data-v="250">250 m</button><button data-v="500">500 m</button><button data-v="1000">1 km</button></div></div>
+      <div class="row"><span>Target distance (m)</span><input type="number" id="daTarget" min="50" max="100000" placeholder="off"></div>
+      <div class="row"><span>Alert sound</span><div class="seg" id="daSound"><button data-v="beep">Beeps</button><button data-v="voice">Say the distance</button></div></div>
+      <p class="muted" style="padding-top:8px">Counts from the start of the session, or from the start of each piece in an interval workout. "Say the distance" reads out the number (e.g. "750") through the phone or boat speakers; the target gets "Target reached".</p>
+    </div>
     <button class="big" data-go="history">Session History</button>
     <button class="big alt" data-go="settings">Settings</button>
     <button class="big alt" data-go="help">iPhone Setup Tips</button>
@@ -222,9 +228,11 @@ const LS = {
 };
 const DEF = { sport:'row', splitBase:'500', units:'metric', smooth:'st3', sens:'1', maxAcc:'30', theme:'dark', layout:'6', sound:'1', demo:'0',
   fields:['split','rate','dist','time','dps','avgSplit'],
+  da:{ every:0, target:null, sound:'beep' },
   wk:{ mode:'justgo', reps:4, type:'dist', val:1000, rest:120, auto:'0', tr:[null,null], ts:[null,null] } };
 const S = Object.assign({}, DEF, LS.get('sp_settings', {}));
 S.wk = Object.assign({}, DEF.wk, S.wk||{});
+S.da = Object.assign({}, DEF.da, S.da||{});
 if(S.smooth==='0'||S.smooth==='10') S.smooth='5';
 if(!S.m15){ if(S.smooth==='2') S.smooth='st3'; S.m15=1; }
 if(S.glare!==undefined){ if(!LS.get('sp_settings',{}).theme) S.theme = S.glare==='1' ? 'bright' : 'dark'; delete S.glare; }
@@ -401,6 +409,7 @@ function newRun(){
 const elapsed = () => run && !run.armed ? (Date.now()-run.start)/1000 : 0;
 async function startSession(){
   audioUnlock();
+  try{ if(S.da.sound==='voice' && 'speechSynthesis' in window){ const u=new SpeechSynthesisUtterance(' '); u.volume=0; speechSynthesis.speak(u); } }catch(e){}
   await startMotion(); startGPS(); keepAwake();
   run = newRun();
   mot.periods=[]; mot.rate=0; mot.lastStroke=0;
@@ -438,8 +447,26 @@ function startPiece(){
   run.rep++; run.phase='work'; run.pieceT=elapsed(); run.pieceD=run.dist; run.pieceS=run.strokes;
   beep(1200,400);
 }
+/* distance alerts: every N metres and/or a target distance */
+const DA = { key:null, mark:0, hit:false };
+function chime(n, freq){ if(!AC) return; for(let i=0;i<n;i++){ const t=AC.currentTime+i*0.22, o=AC.createOscillator(), g=AC.createGain(); o.frequency.value=freq; g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.6,t+0.01); g.gain.exponentialRampToValueAtTime(0.0001,t+0.16); o.connect(g); g.connect(AC.destination); o.start(t); o.stop(t+0.18); } }
+function say(text){ try{ if(!('speechSynthesis' in window)) return false; const u=new SpeechSynthesisUtterance(text); u.rate=1.05; u.volume=1; speechSynthesis.cancel(); speechSynthesis.speak(u); return true; }catch(e){ return false; } }
+function distanceAlert(m, target){
+  const voice = S.da.sound==='voice';
+  if(voice && say(target ? 'Target reached. '+m : String(m))) {} else chime(target?3:2, target?1500:1100);
+  toast(target ? 'Target reached — '+m+' m' : m+' m');
+}
+function distanceTick(){
+  if(!run || run.armed || run.phase==='rest' || run.phase==='done') return;
+  const key = run.id+':'+run.rep+':'+(run.phase==='work'?'w':'j');
+  if(DA.key!==key){ DA.key=key; DA.mark=0; DA.hit=false; }
+  const d = curDist(), ev = +S.da.every||0, tg = +S.da.target||0;
+  if(ev>0){ const m=Math.floor(d/ev); if(m>DA.mark){ DA.mark=m; if(!(tg && m*ev===tg)) distanceAlert(m*ev, false); } }
+  if(tg>0 && !DA.hit && d>=tg){ DA.hit=true; distanceAlert(tg, true); }
+}
 function workoutTick(){
   if(!run || run.armed) return;
+  distanceTick();
   const el=elapsed();
   if(run.phase==='work'){
     const pd=run.dist-run.pieceD, pt=el-run.pieceT;
@@ -604,6 +631,9 @@ function renderMenu(){
   $('wkValLab').textContent = w.type==='dist' ? 'Piece length (metres)' : 'Piece length (seconds)';
   $('wkVal').value=w.val;
   segBind($('wkAuto'), w.auto, v=>{ w.auto=v; saveSettings(); renderMenu(); });
+  segBind($('daEvery'), String(S.da.every||0), v=>{ S.da.every=+v; saveSettings(); renderMenu(); });
+  segBind($('daSound'), S.da.sound, v=>{ S.da.sound=v; saveSettings(); renderMenu(); if(v==='voice'){ audioUnlock(); say('250'); } else { audioUnlock(); chime(2,1100); } });
+  $('daTarget').value = S.da.target||'';
   if(!Array.isArray(w.tr)) w.tr=[null,null]; if(!Array.isArray(w.ts)) w.ts=[null,null];
   $('tRlo').value=w.tr[0]||''; $('tRhi').value=w.tr[1]||''; $('tSfast').value=w.ts[0]?fmtTime(w.ts[0]):''; $('tSslow').value=w.ts[1]?fmtTime(w.ts[1]):'';
   $('wkSummary').textContent='Workout: '+wkDesc(w)+'. Pieces end automatically and rest counts down with beeps. Tap GO NOW during rest to start early.';
@@ -614,6 +644,7 @@ function parseSplit(t){ t=String(t||'').trim(); if(!t) return null; const m=t.ma
   w.tr=[r($('tRlo').value), r($('tRhi').value)]; w.ts=[parseSplit($('tSfast').value), parseSplit($('tSslow').value)];
   if(w.tr[0]&&w.tr[1]&&w.tr[0]>w.tr[1]) w.tr=[w.tr[1],w.tr[0]]; if(w.ts[0]&&w.ts[1]&&w.ts[0]>w.ts[1]) w.ts=[w.ts[1],w.ts[0]];
   saveSettings(); renderMenu(); }));
+$('daTarget').addEventListener('change',()=>{ const n=parseInt($('daTarget').value); S.da.target = n>0 ? n : null; saveSettings(); renderMenu(); });
 $('tClear').onclick=()=>{ S.wk.tr=[null,null]; S.wk.ts=[null,null]; saveSettings(); renderMenu(); toast('Targets cleared'); };
 ['wkReps','wkVal','wkRest'].forEach(id=>$(id).addEventListener('change',()=>{ const w=S.wk;
   w.reps=Math.max(1,Math.min(50,parseInt($('wkReps').value)||1)); w.val=Math.max(1,parseInt($('wkVal').value)||1); w.rest=Math.max(0,parseInt($('wkRest').value)||0);

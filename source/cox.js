@@ -32,7 +32,8 @@ css.textContent = `
 .cxpanel .seg{margin-bottom:8px}
 .call{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--line);cursor:pointer}
 .call.sel{background:rgba(47,155,255,.12)}
-.call .tm{font-variant-numeric:tabular-nums;color:var(--dim);font-size:13px;min-width:44px;padding-top:2px}
+.call .tm{font-variant-numeric:tabular-nums;color:var(--dim);font-size:13px;min-width:52px;padding-top:2px;line-height:1.35}
+.call .tx b{color:var(--acc)}
 .call .tx{flex:1;font-size:16px;line-height:1.3}
 .call .fx{font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums;text-align:right;min-width:74px}
 .fx .g{color:var(--good)}.fx .b{color:var(--bad)}
@@ -89,7 +90,46 @@ const CATS = [
   { k:'Info', c:'#2ed47a', re:/\b(\d+ (to go|meters|metres|m)|to go|halfway|last \d+|first \d+|we are|we're|you're at|split|on (them|the)|up on|down on|seat|deck|length|a half)\b/ },
   { k:'Motivation', c:'#f472b6', re:/\b(let's go|come on|you got|you've got|believe|for each other|this is it|yes|good|great|nice|that's it|beautiful|hell yeah|lets go|proud|everything)\b/ }
 ];
-function categorize(t){ const s = ' ' + String(t).toLowerCase().replace(/[^a-z0-9' ]+/g,' ') + ' '; for(const c of CATS) if(c.re.test(s)) return c; return { k:'Other', c:'#8a97a6' }; }
+const norm = t => String(t).toLowerCase().replace(/[^a-z0-9' ]+/g, ' ').replace(/\s+/g, ' ').trim();
+function categorize(t){ const s = ' ' + norm(t) + ' '; for(const c of CATS) if(c.re.test(s)) return c; return { k:'Other', c:'#8a97a6' }; }
+const OTHER = { k:'Other', c:'#8a97a6' };
+/* earliest keyword in a list of words: returns { i, n, cat } (word index, how many words, category) */
+function findKeyword(words){
+  for(let i = 0; i < words.length; i++){
+    for(let n = Math.min(4, words.length - i); n >= 1; n--){
+      const phrase = ' ' + norm(words.slice(i, i + n).map(w => w.w).join(' ')) + ' ';
+      for(const c of CATS){ const m = phrase.match(c.re); if(m && phrase.indexOf(m[0]) <= 1 && norm(m[0]).split(' ').length <= n) return { i, n:Math.max(1, norm(m[0]).split(' ').length), cat:c }; }
+    }
+  }
+  return null;
+}
+/* split the transcript into separate calls wherever the cox pauses */
+const GAP = 0.8;
+function buildCalls(chunks){
+  const words = [], segOnly = [];
+  for(const c of chunks) for(const sg of (c.tx || [])){
+    if(sg.w && sg.w.length) for(const w of sg.w) words.push({ t:c.t0 + w[0], e:c.t0 + w[1], w:w[2] });
+    else segOnly.push({ t:c.t0 + sg.s, e:c.t0 + sg.e, text:sg.t });   // older transcripts: no word timings
+  }
+  words.sort((a, b) => a.t - b.t);
+  const groups = []; let cur = [];
+  for(const w of words){
+    const prev = cur[cur.length - 1];
+    if(prev && (w.t - prev.e >= GAP || (/[.!?]$/.test(prev.w) && w.t - prev.e >= 0.3))){ groups.push(cur); cur = []; }
+    cur.push(w);
+  }
+  if(cur.length) groups.push(cur);
+  const calls = groups.map(g => {
+    const k = findKeyword(g), at = k ? g[k.i].t : g[0].t;
+    const html = g.map((w, i) => k && i >= k.i && i < k.i + k.n ? '<b>' + esc(w.w) + '</b>' : esc(w.w)).join(' ');
+    return { t:at, start:g[0].t, e:g[g.length - 1].e, text:g.map(w => w.w).join(' '), html, cat:k ? k.cat : OTHER, kw:!!k };
+  });
+  for(const s of segOnly) calls.push({ t:s.t, start:s.t, e:s.e, text:s.text, html:esc(s.text), cat:categorize(s.text), kw:false });
+  return calls.sort((a, b) => a.t - b.t);
+}
+const hasWords = chunks => chunks.some(c => (c.tx || []).some(sg => sg.w && sg.w.length));
+function distAt(smp, t){ if(!smp.length) return 0; let lo = 0, hi = smp.length - 1; while(lo < hi){ const m = (lo + hi) >> 1; if(smp[m][0] < t) lo = m + 1; else hi = m; }
+  const b = smp[lo], a = smp[Math.max(0, lo - 1)]; if(b[0] === a[0]) return b[3]; const f = Math.max(0, Math.min(1, (t - a[0]) / (b[0] - a[0]))); return a[3] + (b[3] - a[3]) * f; }
 
 /* ================= check factor (boat deceleration at the catch) ================= */
 const CK = { sk:0, curMin:0, vals:[], last:0 };
@@ -343,18 +383,16 @@ function sampleAt(smp, t){ let lo = 0, hi = smp.length - 1; if(hi < 0) return nu
 function windowAvg(smp, a, b){ let v = 0, r = 0, n = 0, rest = 0; for(const s of smp){ if(s[0] < a) continue; if(s[0] >= b) break; v += s[4]; r += s[5]; n++; if(s[7]) rest++; } return n ? { v:v / n, r:r / n, n, rest } : null; }
 function analyse(data, chunks){
   const smp = data.samples || [], T = smp.length ? smp[smp.length - 1][0] : 0;
-  const calls = [];
-  for(const c of chunks) for(const s of (c.tx || [])) calls.push({ t:c.t0 + s.s, e:c.t0 + s.e, text:s.t, idx:c.idx });
-  calls.sort((a, b) => a.t - b.t);
+  const calls = buildCalls(chunks);
   for(const c of calls){
-    c.cat = categorize(c.text);
+    c.d = distAt(smp, c.t);
     const b = windowAvg(smp, c.t - 20, c.t), a = windowAvg(smp, c.t + 2, c.t + 22);
     // only judge calls made while the boat was properly moving, with a full 20 s either side
     if(b && a && c.t >= 20 && b.n >= 12 && a.n >= 12 && b.v > 1.5 && a.v > 1.5 && !b.rest && !a.rest){
       const ds = splitSec(a.v) - splitSec(b.v); if(Math.abs(ds) < 25){ c.dSplit = ds; c.dRate = a.r - b.r; } }
   }
-  const talk = calls.reduce((s, c) => s + Math.max(0, c.e - c.t), 0);
-  let longest = 0, prev = 0; for(const c of calls){ const s0 = sampleAt(smp, c.t); if(s0 && !s0[7]) longest = Math.max(longest, c.t - prev); prev = c.e; }
+  const talk = calls.reduce((s, c) => s + Math.max(0, c.e - c.start), 0);
+  let longest = 0, prev = 0; for(const c of calls){ const s0 = sampleAt(smp, c.start); if(s0 && !s0[7]) longest = Math.max(longest, c.start - prev); prev = c.e; }
   if(T) longest = Math.max(longest, T - prev);
   const byCat = {};
   for(const c of calls){ const k = c.cat.k; const o = byCat[k] || (byCat[k] = { k, c:c.cat.c, n:0, ds:0, dr:0, m:0 }); o.n++; if(c.dSplit != null){ o.ds += c.dSplit; o.dr += c.dRate; o.m++; } }
@@ -370,12 +408,15 @@ async function renderAnalysis(box, opts){
   box.innerHTML = '<div class="card"><h2>Cox Calls</h2><p class="muted" id="cxaStat">Loading the recording…</p></div>';
   const anchor = box.closest('#coxBox') || box, host = document.createElement('div');
   host.className = 'cxpanel'; host.style.display = 'none'; anchor.parentNode.insertBefore(host, anchor);
-  let chunks = [], tries = 0;
+  let chunks = [], tries = 0, redone = false;
   const load = async () => {
     try{ chunks = await getChunks(); }catch(e){ $c('cxaStat') && ($c('cxaStat').textContent = 'Recording not available offline yet — it will appear once it has uploaded.'); return; }
     const local = (opts.localChunks ? opts.localChunks() : (data.cox && data.cox.chunks)) || [];
     if(!chunks.length && !local.length && tries++ < 20){ $c('cxaStat') && ($c('cxaStat').textContent = 'Saving the recording…'); setTimeout(load, 2000); return; }
     if(!chunks.length && local.length && !opts.localOk){ $c('cxaStat') && ($c('cxaStat').textContent = 'Uploading the recording (' + local.length + ' minute' + (local.length > 1 ? 's' : '') + ')… transcripts follow a minute later.'); if(tries++ < 40) setTimeout(load, 8000); return; }
+    if(opts.retxAll && !redone && chunks.length && chunks.every(c => c.status !== 'new' && c.status !== 'local') && chunks.some(c => c.status === 'done' && (c.tx || []).length) && !hasWords(chunks)){
+      redone = true; opts.retxAll(); chunks.forEach(c => c.status = 'new'); tries = 0;   // older transcript: re-run it with word timings
+    }
     const waiting = chunks.filter(c => c.status === 'new' || c.status === 'local').length;
     if(waiting && tries++ < 40){ $c('cxaStat') && ($c('cxaStat').textContent = 'Transcribing ' + waiting + ' of ' + chunks.length + ' minutes…'); if(tries === 8 && retx) retx(); setTimeout(load, 6000); }
     draw();
@@ -391,13 +432,13 @@ async function renderAnalysis(box, opts){
     const A = analyse(data, chunks), smp = data.samples || [];
     const pct = A.T ? Math.round(A.talk / A.T * 100) : 0, failed = chunks.filter(c => c.status === 'error' || c.status === 'no_ai').length;
     const hasTrack = smp.some(s => s[1] != null);
-    const panelHtml = (hasTrack ? '<div class="seg" id="cxaView"><button data-v="chart">Split &amp; rate</button><button data-v="course">Course</button></div>' : '') +
-      '<canvas id="cxaChart" height="170"></canvas>' + (hasTrack ? '<canvas id="cxaTrack" height="170" style="display:none"></canvas>' : '') +
+    const panelHtml = '<div class="seg" id="cxaView"><button data-v="chart">Split &amp; rate</button><button data-v="course">Distance</button></div>' +
+      '<canvas id="cxaChart" height="170"></canvas><canvas id="cxaTrack" height="170" style="display:none"></canvas>' +
       '<div class="player"><button id="cxaPlay">▶</button><input type="range" id="cxaPos" min="0" max="' + Math.max(1, Math.ceil(A.T)) + '" step="1" value="0"><span class="pt" id="cxaPT">0:00</span></div>';
     let h = '<div class="card"><h2>Cox Calls</h2>' + (chunks.some(c => c.status === 'new' || c.status === 'local') ? '<p class="muted" id="cxaStat">' + (chunks.some(c => c.status === 'local') ? 'Uploading the recording — transcript follows.' : 'Still transcribing — more calls will appear.') + '</p>' : '') +
       (failed ? '<p class="muted">' + failed + ' minute(s) couldn’t be transcribed, but the audio is still here to play.</p>' : '') +
       '<div class="grid3">' + stat('Calls', A.calls.length) + stat('Talk time', pct + '%') + stat('Longest quiet', fmtTime(A.longest)) + '</div>' +
-      '<p class="muted" style="margin-top:8px">The panel above stays put while you scroll. Chart: <span style="color:var(--acc)">■</span> split (higher = faster) <span style="color:var(--warn)">■</span> rate, ticks = calls. Tap the chart or any call to listen from there.</p></div>';
+      '<p class="muted" style="margin-top:8px">Each call is timed at its keyword (in blue). The panel above stays put while you scroll. Chart: <span style="color:var(--acc)">■</span> split (higher = faster) <span style="color:var(--warn)">■</span> rate, ticks = calls. Tap the chart or any call to listen from there.</p></div>';
     if(A.cats.length) h += '<div class="card"><h2>What each type of call did</h2><table><tr><th>Type</th><th>Calls</th><th>Split after</th><th>Rate after</th></tr>' +
       A.cats.map(c => '<tr><td><span class="chip" style="background:' + c.c + '">' + c.k + '</span></td><td>' + c.n + '</td><td>' + (c.m ? sgn(c.ds / c.m, 1) + 's' : '—') + '</td><td>' + (c.m ? sgn(c.dr / c.m, 1) : '—') + '</td></tr>').join('') +
       '</table><p class="muted" style="margin-top:8px">Average change in the 20 s after a call vs the 20 s before. Negative split = boat got faster. One session is a hint, not proof — look for patterns over several.</p></div>';
@@ -409,7 +450,7 @@ async function renderAnalysis(box, opts){
     if(scroller) scroller.scrollTop = keepTop;
     wire(A, smp);
   };
-  const callRow = c => '<div class="call" data-t="' + c.t.toFixed(1) + '"><span class="tm">' + fmtTime(Math.max(0, c.t)) + '</span><span class="tx"><span class="chip" style="background:' + c.cat.c + '">' + c.cat.k + '</span> ' + esc(c.text) + '</span><span class="fx">' + fxHtml(c) + '</span></div>';
+  const callRow = c => '<div class="call" data-t="' + c.start.toFixed(1) + '"><span class="tm">' + fmtTime(Math.max(0, c.t)) + '<br>' + fmtDist(Math.max(0, c.d || 0)) + distUnit(c.d || 0) + '</span><span class="tx"><span class="chip" style="background:' + c.cat.c + '">' + c.cat.k + '</span> ' + c.html + '</span><span class="fx">' + fxHtml(c) + '</span></div>';
   const P = { audio:new Audio(), cur:null, t:0, playing:false, urls:{} };
   window.__cxaP = P;
   const urlFor = async idx => P.urls[idx] || (P.urls[idx] = await getAudio(idx));
@@ -432,7 +473,7 @@ async function renderAnalysis(box, opts){
     const nowT = performance.now(); if(!force && P.playing && nowT - uiT < 250) return; uiT = nowT;
     b.textContent = P.playing ? '❚❚' : '▶'; const pos = $c('cxaPos'); if(document.activeElement !== pos) pos.value = Math.round(P.t); $c('cxaPT').textContent = fmtTime(Math.max(0, P.t));
     drawTimeline(); drawTrack();
-    document.querySelectorAll('#cxaList .call').forEach(el => { const t = +el.dataset.t, on = P.t >= t - 0.2 && P.t < t + 4; if(el.classList.contains('sel') !== on) el.classList.toggle('sel', on); });
+    document.querySelectorAll('#cxaList .call').forEach(el => { const t = +el.dataset.t, on = P.t >= t - 0.2 && P.t < t + 3; if(el.classList.contains('sel') !== on) el.classList.toggle('sel', on); });
   }
   function drawTimeline(){
     const c = $c('cxaChart'); if(!c || !A0 || view !== 'chart') return; const [x, w, h] = canvasFast(c); const T = A0.T || 1;
@@ -444,23 +485,34 @@ async function renderAnalysis(box, opts){
     for(const cl of A0.calls){ x.fillStyle = cl.cat.c; x.fillRect(cl.t / T * w - 1, 0, 3, 16); }
     x.strokeStyle = cssVar('--fg'); x.lineWidth = 1; x.beginPath(); x.moveTo(P.t / T * w, 0); x.lineTo(P.t / T * w, h); x.stroke();
   }
-  function drawTrack(){
-    const c = $c('cxaTrack'); if(!c || view !== 'course') return; const pts = smp0.filter(s => s[1] != null); if(pts.length < 2) return;
-    const [x, w, h] = canvasFast(c); const k = Math.cos(pts[0][1] * Math.PI / 180);
-    const minX = Math.min(...pts.map(p => p[2])) * k, maxX = Math.max(...pts.map(p => p[2])) * k, minY = Math.min(...pts.map(p => p[1])), maxY = Math.max(...pts.map(p => p[1]));
-    const sc = Math.min((w - 20) / ((maxX - minX) || 1e-6), (h - 20) / ((maxY - minY) || 1e-6)), ox = (w - (maxX - minX) * sc) / 2, oy = (h - (maxY - minY) * sc) / 2;
-    const Pt = p => [ox + (p[2] * k - minX) * sc, h - oy - (p[1] - minY) * sc];
-    x.strokeStyle = cssVar('--acc'); x.lineWidth = 3; x.lineJoin = 'round'; x.beginPath(); pts.forEach((p, i) => { const [a, b] = Pt(p); i ? x.lineTo(a, b) : x.moveTo(a, b); }); x.stroke();
-    for(const cl of A0.calls){ const s = sampleAt(pts, cl.t); if(!s) continue; const [a, b] = Pt(s); x.fillStyle = cl.cat.c; x.beginPath(); x.arc(a, b, 4, 0, 7); x.fill(); }
-    const cur = sampleAt(pts, P.t); if(cur){ const [a, b] = Pt(cur); x.fillStyle = cssVar('--fg'); x.beginPath(); x.arc(a, b, 8, 0, 7); x.fill(); }
+  function niceStep(total){ for(const st of [50, 100, 250, 500, 1000, 2000, 5000]) if(total / st <= 8) return st; return 10000; }
+  function drawTrack(){   // "Distance": a straight line from start to finish, with each call marked where its keyword was said
+    const c = $c('cxaTrack'); if(!c || view !== 'course' || !A0) return;
+    const [x, w, h] = canvasFast(c); const total = Math.max(1, smp0.length ? smp0[smp0.length - 1][3] : 1);
+    const L = 14, R = w - 14, Y = 100, X = d => L + (R - L) * Math.max(0, Math.min(1, d / total));
+    x.fillStyle = cssVar('--line'); let restA = null;   // shade rests
+    smp0.forEach(s => { if(s[7] && restA == null) restA = s[3]; if(!s[7] && restA != null){ x.fillRect(X(restA), Y - 70, Math.max(2, X(s[3]) - X(restA)), 80); restA = null; } });
+    x.strokeStyle = cssVar('--dim'); x.lineWidth = 4; x.lineCap = 'round'; x.beginPath(); x.moveTo(L, Y); x.lineTo(R, Y); x.stroke();
+    const step = niceStep(total); x.fillStyle = cssVar('--dim'); x.font = '12px -apple-system,sans-serif'; x.textAlign = 'center'; x.lineWidth = 1;
+    for(let d = 0; d <= total + 0.01; d += step){ const px = X(d); x.beginPath(); x.moveTo(px, Y + 6); x.lineTo(px, Y + 14); x.strokeStyle = cssVar('--dim'); x.stroke(); x.fillText(fmtDist(d) + (d === 0 ? '' : distUnit(d)), Math.min(R - 12, Math.max(L + 8, px)), Y + 30); }
+    // calls: coloured flags above the line, staggered so close calls don't overlap
+    let lastX = -99, lane = 0;
+    for(const cl of A0.calls){ const px = X(cl.d || 0); lane = px - lastX < 10 ? (lane + 1) % 4 : 0; lastX = px;
+      x.strokeStyle = cl.cat.c; x.lineWidth = 2; x.beginPath(); x.moveTo(px, Y - 4); x.lineTo(px, Y - 22 - lane * 12); x.stroke();
+      x.fillStyle = cl.cat.c; x.beginPath(); x.arc(px, Y - 24 - lane * 12, 4, 0, 7); x.fill(); }
+    const cur = distAt(smp0, P.t); const cx = X(cur);   // where the boat is in the recording
+    x.fillStyle = cssVar('--fg'); x.beginPath(); x.arc(cx, Y, 8, 0, 7); x.fill();
+    x.textAlign = cx > w - 60 ? 'right' : 'left'; x.font = 'bold 13px -apple-system,sans-serif'; x.fillText(fmtDist(cur) + distUnit(cur), cx + (cx > w - 60 ? -10 : 10), Y + 52 > h ? h - 4 : Y + 52);
   }
+  function timeAtDist(d){ for(const s of smp0) if(s[3] >= d) return s[0]; return smp0.length ? smp0[smp0.length - 1][0] : 0; }
   function wire(A, smp){
     A0 = A; smp0 = smp;
-    const setView = v => { view = v; $c('cxaChart').style.display = v === 'chart' ? 'block' : 'none'; if($c('cxaTrack')) $c('cxaTrack').style.display = v === 'course' ? 'block' : 'none'; if($c('cxaView')) segBind($c('cxaView'), v, setView); ui(true); };
+    const setView = v => { view = v; $c('cxaChart').style.display = v === 'chart' ? 'block' : 'none'; $c('cxaTrack').style.display = v === 'course' ? 'block' : 'none'; if($c('cxaView')) segBind($c('cxaView'), v, setView); ui(true); };
     setView(view);
     $c('cxaPlay').onclick = () => { if(P.playing){ P.audio.pause(); P.playing = false; ui(true); if(pendingDraw) draw(); } else playAt(P.t); };
     $c('cxaPos').onchange = () => { P.t = +$c('cxaPos').value; if(P.playing) playAt(P.t); else ui(true); };
     $c('cxaChart').onclick = e => { const r = e.target.getBoundingClientRect(); P.t = (e.clientX - r.left) / r.width * (A.T || 1); playAt(P.t); };
+    $c('cxaTrack').onclick = e => { const r = e.target.getBoundingClientRect(), total = smp.length ? smp[smp.length - 1][3] : 0; const f = Math.max(0, Math.min(1, (e.clientX - r.left - 14) / (r.width - 28))); P.t = timeAtDist(f * total); playAt(P.t); };
     box.querySelectorAll('.call').forEach(el => el.onclick = () => { P.t = Math.max(0, +el.dataset.t - 0.3); playAt(P.t); });
     ui();
   }
@@ -482,7 +534,8 @@ function detail(id, sm, data){
     localOk: true,
     getAudio: async idx => { const rec = await idbGet(recId + ':' + idx).catch(() => null); if(rec && rec.blob) return URL.createObjectURL(rec.blob);
       const r = await fetch('/api/cox/audio?sid=' + id + '&idx=' + idx, { headers:H }); if(!r.ok) throw 0; return URL.createObjectURL(await r.blob()); },
-    retx: () => fetch('/api/cox/retx?sid=' + id, { method:'POST', headers:H }).catch(() => {})
+    retx: () => fetch('/api/cox/retx?sid=' + id, { method:'POST', headers:H }).catch(() => {}),
+    retxAll: () => fetch('/api/cox/retx?all=1&sid=' + id, { method:'POST', headers:H }).catch(() => {})
   });
 }
 function crewCard(crew){ const seats = BOATS[crew.boat] || BOATS['8']; const names = seats.filter(s => crew.names && crew.names[s]); if(!names.length) return '';
@@ -566,7 +619,7 @@ async function coachSession(id){
 /* ================= boot ================= */
 window.COX = { sessionStart, sessionStop, sessionCancel, syncAudio, deleteLocal, detail, accel:ckAccel, stroke:ckStroke, checkVal,
   checkStr:() => { const v = checkVal(); return v ? v.toFixed(1) : '–'; }, menu:renderMenuCards, settings:renderSettingsCard, on:() => !!CS.on,
-  _test:{ categorize, analyse, parsePlan, ulawEnc, ulawDec, encodeFrame, CS, L, M, CH } };
+  _test:{ categorize, analyse, buildCalls, parsePlan, ulawEnc, ulawDec, encodeFrame, CS, L, M, CH } };
 if(COACH_MODE){ coachMount(); return; }
 mountCox(); renderBar();
 setInterval(() => { planTick(); if(CS.on) renderBar(); }, 250);
