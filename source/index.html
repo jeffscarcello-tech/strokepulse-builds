@@ -95,7 +95,8 @@ canvas{width:100%;display:block;border-radius:8px;background:var(--bg)}
 .upd{display:none;position:fixed;left:10px;right:10px;bottom:calc(90px + env(safe-area-inset-bottom));background:var(--acc);color:#fff;border-radius:12px;padding:12px 14px;z-index:25;align-items:center;gap:10px;font-weight:700}
 .upd.on{display:flex}.upd span{flex:1}.upd button{background:#fff;color:#000;border-radius:8px;padding:9px 12px;font-weight:800}
 .ver{text-align:center;color:var(--dim);font-size:13px;padding:14px 0 4px}
-.toast{position:fixed;left:50%;bottom:110px;transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:10px;font-weight:700;display:none;z-index:30;max-width:90%;text-align:center}
+/* pop-up messages sit just under the status bar and never block taps */
+.toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 44px);transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:8px 14px;border-radius:10px;font-weight:700;font-size:15px;display:none;z-index:30;max-width:92%;text-align:center;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.35)}
 </style>
 </head>
 <body>
@@ -234,7 +235,7 @@ const saveSettings = () => LS.set('sp_settings', S);
 const $ = id => document.getElementById(id);
 const pad = n => String(n).padStart(2,'0');
 const clock12 = d => ((d.getHours()%12)||12)+':'+pad(d.getMinutes())+' '+(d.getHours()<12?'AM':'PM');
-function toast(m){ const t=$('toast'); t.textContent=m; t.style.display='block'; clearTimeout(toast._t); toast._t=setTimeout(()=>t.style.display='none',2600); }
+function toast(m){ const t=$('toast'); t.textContent=m; t.style.display='block'; clearTimeout(toast._t); toast._t=setTimeout(()=>t.style.display='none',2000); }
 function fmtTime(sec, tenths){ if(!isFinite(sec)||sec<0) sec=0; const h=Math.floor(sec/3600), m=Math.floor(sec%3600/60), s=sec%60;
   const ss = tenths ? s.toFixed(1).padStart(4,'0') : pad(Math.floor(s));
   return h ? h+':'+pad(m)+':'+ss : m+':'+ss; }
