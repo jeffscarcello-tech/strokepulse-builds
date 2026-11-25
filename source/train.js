@@ -44,17 +44,26 @@ css.textContent = `
 .ach .ad{font-size:12px;color:var(--dim);margin:2px 0 6px;min-height:30px}
 .ach .tier{position:absolute;top:8px;right:8px;font-size:11px;font-weight:900;padding:2px 7px;border-radius:999px;color:#000}
 .ach .locked{filter:grayscale(1);opacity:.45}
-.pod{display:flex;justify-content:center;align-items:flex-end;gap:14px;margin:6px 0 12px}
-.pod > div{text-align:center;width:31%}
-.pod .ring{margin:0 auto 6px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;color:#000;position:relative}
-.pod .rk{position:absolute;bottom:-8px;left:50%;transform:translateX(-50%);width:22px;height:22px;border-radius:50%;font-size:12px;line-height:22px;background:var(--panel);color:var(--fg);border:2px solid var(--line)}
-.pod .nm{font-weight:800;margin-top:12px;font-size:14px}
-.pod .vl{font-variant-numeric:tabular-nums;font-size:14px}
-.lbr{display:flex;align-items:center;gap:10px;padding:9px 6px;border-bottom:1px solid var(--line)}
-.lbr.me{background:rgba(255,159,28,.15);border-radius:10px}
-.lbr .n{width:22px;color:var(--dim);font-weight:800}
-.lbr .x{flex:1;font-weight:700}
-.lbr .v{font-variant-numeric:tabular-nums;font-weight:800}
+.mgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:10px 0 14px}
+.mgrid button{min-width:0;padding:9px 4px;border-radius:10px;font-weight:800;font-size:13px;background:var(--bg);color:var(--dim);border:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mgrid button.on{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.lanes{position:relative;padding-right:6px}
+.lane{padding:8px 0 6px;border-top:1px solid var(--line)}
+.lane:first-child{border-top:0}
+.lane .lh{display:flex;align-items:center;gap:8px}
+.lane .lno{width:24px;height:24px;border-radius:6px;background:var(--bg);border:1px solid var(--line);font-weight:900;font-size:13px;display:flex;align-items:center;justify-content:center;flex:none}
+.lane.lead .lno{background:#2ed47a;color:#000;border-color:#2ed47a}
+.lane .ln{flex:1;font-weight:800;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lane .lv{font-weight:900;font-variant-numeric:tabular-nums}
+.lane .water{position:relative;height:22px;margin:6px 0 2px;border-radius:6px;overflow:hidden;
+  background:repeating-linear-gradient(90deg,rgba(255,255,255,.07) 0 2px,transparent 2px 25%),linear-gradient(180deg,#0e2a44,#0b2238);
+}
+.lane .water::after{content:"";position:absolute;right:0;top:0;bottom:0;width:8px;background:conic-gradient(#fff 25%,#111 0 50%,#fff 0 75%,#111 0) 0 0/8px 8px}
+body.glare .lane .water{background:repeating-linear-gradient(90deg,rgba(0,0,0,.08) 0 2px,transparent 2px 25%),linear-gradient(180deg,#cfe6ff,#b8d8fb)}
+.lane .wake{position:absolute;left:0;top:7px;height:8px;border-radius:4px}
+.lane .boatp{position:absolute;top:5px;transition:left .5s}
+.lane .lg2{font-size:12px;color:var(--dim);text-align:right;min-height:14px}
+.lane.me{background:linear-gradient(90deg,rgba(255,159,28,.10),transparent);border-radius:10px;padding-left:6px;padding-right:6px}
 .you{font-size:11px;font-weight:900;color:#ff9f1c;margin-left:6px}
 .newach{background:linear-gradient(90deg,#ffd400,#ff9f1c);color:#000;border-radius:12px;padding:12px;margin-bottom:12px;font-weight:800}
 .frm label{display:block;font-size:13px;color:var(--dim);margin:10px 0 4px}
@@ -572,12 +581,18 @@ function boardBody(box, scope, ctx, all, me){
   const meId = ctx ? ctx.meId : me.id;
   const B = BOARDS.find(b => b[0] === BM), R = people.map(x => { const L = x.all.filter(s => s.start >= from && s.start <= now); return { p:x.p, L, v:B[2](L), n:L.length }; });
   const valid = R.filter(r => B[4] ? isFinite(r.v) : true).sort((a, b) => B[4] ? a.v - b.v : b.v - a.v);
-  const pod = [valid[1], valid[0], valid[2]];
   let h = scope + (ctx ? '<div class="card" style="display:flex;align-items:center;gap:10px"><div style="flex:1"><b style="font-size:18px">' + esc(ctx.info.name) + '</b><div class="muted" style="font-size:13px">' + people.length + ' member' + (people.length === 1 ? '' : 's') + ' · code <b style="letter-spacing:2px">' + ctx.info.code + '</b></div></div><button class="big" id="crInv" style="width:auto;padding:0 16px;margin:0;height:44px;font-size:16px">Invite</button></div>' : '') + '<div class="card"><div class="seg" id="bP"><button data-v="w">Week</button><button data-v="m">Month</button><button data-v="a">All time</button></div>' +
-    '<div style="display:flex;gap:6px;overflow-x:auto;margin:10px -4px 4px;padding:0 4px" id="bM">' + BOARDS.map(b => '<button data-v="' + b[0] + '" style="flex:none;padding:8px 12px;border-radius:999px;font-weight:800;font-size:14px;' + (b[0] === BM ? 'background:#ff9f1c;color:#000' : 'background:var(--bg);color:var(--dim)') + '">' + b[1] + '</button>').join('') + '</div>';
-  h += '<div class="pod">' + pod.map((r, i) => { if(!r) return '<div></div>'; const rk = i === 1 ? 1 : i === 0 ? 2 : 3, sz = rk === 1 ? 84 : 64, col = rk === 1 ? '#ffd400' : rk === 2 ? '#c0c8d0' : '#d08b4f';
-    return '<div>' + (rk === 1 ? '<div style="font-size:22px">👑</div>' : '') + '<div class="ring" style="width:' + sz + 'px;height:' + sz + 'px;background:' + (r.p.c || PCOL[0]) + ';border:4px solid ' + col + ';font-size:' + Math.round(sz * 0.32) + 'px">' + esc(initials(r.p.name)) + '<span class="rk">' + rk + '</span></div><div class="nm">' + esc(r.p.name) + '</div><div class="vl">' + B[3](r.v) + '</div></div>'; }).join('') + '</div>';
-  h += valid.map((r, i) => '<div class="lbr' + (r.p.id === meId ? ' me' : '') + '"><span class="n">' + (i + 1) + '</span>' + avatar(r.p) + '<span class="x">' + esc(r.p.name) + (r.p.id === meId ? '<span class="you">YOU</span>' : '') + '</span><span class="v">' + B[3](r.v) + '</span>' + (ctx && ctx.owner && r.p.id !== meId ? '<button class="pchip" data-kick="' + r.p.id + '" style="padding:4px 8px;font-size:12px">✕</button>' : '') + '</div>').join('') +
+    '<div class="mgrid" id="bM">' + BOARDS.map(b => '<button data-v="' + b[0] + '" class="' + (b[0] === BM ? 'on' : '') + '">' + b[1] + '</button>').join('') + '</div>';
+  // race lanes: each person rows down their own lane; the boat's position shows how close they are to the leader
+  const lead = valid[0], hiB = !B[4];
+  const frac = r => { if(!lead || !isFinite(r.v)) return 0.04; if(hiB) return lead.v > 0 ? Math.max(0.04, r.v / lead.v) : 0.04; return Math.max(0.04, Math.min(1, 1 - (r.v - lead.v) / (lead.v * 0.12 || 1))); };
+  const gap = r => { if(r === lead) return valid.length > 1 ? 'Leading' : ''; const d = hiB ? lead.v - r.v : r.v - lead.v; return (hiB ? B[3](d) : '+' + d.toFixed(1) + ' s') + ' behind'; };
+  const boat = c => '<svg viewBox="0 0 46 12" width="46" height="12"><path d="M1 6 C12 1.5 34 1.5 45 6 C34 10.5 12 10.5 1 6Z" fill="' + c + '" stroke="#fff" stroke-width="1"/><circle cx="15" cy="6" r="1.6" fill="#fff"/><circle cx="23" cy="6" r="1.6" fill="#fff"/><circle cx="31" cy="6" r="1.6" fill="#fff"/></svg>';
+  h += '<div class="lanes">' + (valid.length ? valid.map((r, i) => { const f = frac(r), me = r.p.id === meId;
+      return '<div class="lane' + (me ? ' me' : '') + (i === 0 && valid.length > 1 ? ' lead' : '') + '"><div class="lh"><span class="lno">' + (i + 1) + '</span><span class="ln">' + esc(r.p.name) + (me ? '<span class="you">YOU</span>' : '') + '</span><span class="lv">' + B[3](r.v) + '</span>' +
+        (ctx && ctx.owner && !me ? '<button class="pchip" data-kick="' + r.p.id + '" style="padding:3px 8px;font-size:12px;margin-left:6px">✕</button>' : '') + '</div>' +
+        '<div class="water"><div class="wake" style="width:' + (f * 100).toFixed(1) + '%;background:linear-gradient(90deg,transparent,' + (r.p.c || PCOL[0]) + '66)"></div><div class="boatp" style="left:max(2px, calc(' + (f * 100).toFixed(1) + '% - 54px))">' + boat(r.p.c || PCOL[0]) + '</div></div>' +
+        '<div class="lg2">' + esc(gap(r)) + '</div></div>'; }).join('') : '<p class="muted">No rows in this period yet.</p>') + '</div>' +
     (!ctx && profiles().length < 2 ? '<p class="muted" style="margin-top:10px">Add rowers with the name button at the top, or tap ＋ Crew to compete with your crew on their own phones.</p>' : '') + '</div>';
   // team goals
   const team = ctx ? { weekM:ctx.info.goal_m } : LS.get('sp_team', {}), n = people.length, wT = team.weekM || 20000 * n, w0 = thisWeek(), wk = people.map(x => ({ p:x.p, L:x.all.filter(s => s.start >= w0) }));
