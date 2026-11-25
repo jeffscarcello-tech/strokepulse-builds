@@ -51,6 +51,7 @@ css.textContent = `
 textarea.coxin{min-height:110px;font-family:inherit}
 .quick{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
 .quick button{height:48px;border-radius:10px;background:var(--panel);border:1px solid var(--line);font-weight:700;font-size:15px}
+.call.hit{background:rgba(255,159,28,.18);border-radius:10px}
 .talk{width:100%;height:96px;border-radius:18px;background:var(--bad);color:#fff;font-size:24px;font-weight:900;margin-top:10px;touch-action:none}
 .talk.on{background:var(--good);color:#00210f}
 .tele{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border-radius:12px;overflow:hidden;margin-bottom:12px}
@@ -288,7 +289,7 @@ function mountCox(){
   $c('cbBeat').onclick = beatToggle;
   $c('cbLive').onclick = () => { if(!CS.link){ toast('Make a coach link first: Settings › Cox Mode'); return; } if(!L.up){ liveConnect(); toast('Connecting to coach…'); return; } toast(L.listening ? 'Coach is listening live' : (L.coaches ? 'Coach is connected (not listening)' : 'Waiting for the coach to open the link')); };
   // menu + settings cards
-  const menuBox = document.createElement('div'); menuBox.id = 'coxMenu'; const hist = document.querySelector('#scr-menu [data-go=history]'); hist.parentNode.insertBefore(menuBox, hist);
+  const menuBox = document.createElement('div'); menuBox.id = 'coxMenu'; const hist = document.querySelector('#scr-menu [data-go=help]'); hist.parentNode.insertBefore(menuBox, hist);
   const setBox = document.createElement('div'); setBox.id = 'coxSettings'; const bk = $c('bkOn').closest('.card'); bk.parentNode.insertBefore(setBox, bk);
   const help = document.querySelector('#scr-help .card'); help.insertAdjacentHTML('beforeend', '<br><p><b>Cox mode:</b> turn it on in Settings. Plug a headset mic into the phone. Your voice goes to the boat speakers (wired system or Bluetooth speaker) and is recorded with the boat data. After the session, History shows every call with what the boat did next. Only the cox and anyone with the private coach link can hear recordings.</p><br><p><b>Wireless speakers:</b> pair the phone with one Auracast-enabled JBL speaker, then link more JBL Auracast speakers to it with their Auracast button. Put them at bow, middle and stern.</p><br><p><b>Coach talk-back</b> plays through the boat speakers, so the whole crew hears the coach. Coach text messages show only on the cox’s screen.</p><br><p><b>Check</b> (experimental) is how hard the boat slows at each catch, from the phone’s motion sensor. Lower is better.</p>');
 }
@@ -461,6 +462,9 @@ async function renderAnalysis(box, opts){
     box.innerHTML = h;
     if(scroller) scroller.scrollTop = keepTop;
     wire(A, smp);
+    const sk = window.__cxSeek;
+    if(sk && sk.id === sid){ window.__cxSeek = null; const row = [...box.querySelectorAll('.call')].find(r => Math.abs(+r.dataset.t - sk.t) < 0.6);
+      if(row){ row.classList.add('hit'); setTimeout(() => row.scrollIntoView({ block:'center' }), 50); } P.t = sk.t; ui(true); playAt(sk.t).catch(() => {}); }
   };
   const callRow = c => '<div class="call" data-t="' + c.start.toFixed(1) + '"><span class="tm">' + fmtTime(Math.max(0, c.t)) + '<br>' + fmtDist(Math.max(0, c.d || 0)) + distUnit(c.d || 0) + '</span><span class="tx"><span class="chip" style="background:' + c.cat.c + '">' + c.cat.k + '</span> ' + c.html + '</span><span class="fx">' + fxHtml(c) + '</span></div>';
   const P = { audio:new Audio(), cur:null, t:0, playing:false, urls:{} };

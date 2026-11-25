@@ -41,7 +41,7 @@ tr.best td{color:var(--good);font-weight:800}
 document.head.appendChild(css);
 
 /* ================= numbers ================= */
-const kg = () => { const w = +S.weightKg || 0; return w >= 25 && w <= 250 ? w : 70; };
+const kg = () => { if(window.TRN) return TRN.kg(); const w = +S.weightKg || 0; return w >= 25 && w <= 250 ? w : 70; };
 /* exercise intensity (MET) from stroke rate, falling back to boat speed — an estimate */
 function met(rate, v){ if(rate >= 32) return 12.5; if(rate >= 28) return 11; if(rate >= 24) return 9.5; if(rate >= 20) return 8; if(rate >= 14) return 6; if(v > 0.8) return 4; return 2; }
 function kcal(smp){ let k = 0, w = kg(); for(let i = 1; i < smp.length; i++){ const dt = Math.max(0, Math.min(5, smp[i][0] - smp[i - 1][0])); k += met(smp[i][5], smp[i][4]) * w * dt / 3600; } return k; }
@@ -90,7 +90,7 @@ function ensureCache(){
   }
   if(changed) LS.set('sp_index', idx);
   const pb = { b500:null, b1k:null, b2k:null };
-  for(const s of idx) for(const k of Object.keys(pb)) if(s[k] && (!pb[k] || s[k] < pb[k].v)) pb[k] = { v:s[k], id:s.id };
+  for(const s of idx.filter(x => !window.TRN || TRN.mine(x))) for(const k of Object.keys(pb)) if(s[k] && (!pb[k] || s[k] < pb[k].v)) pb[k] = { v:s[k], id:s.id };
   return { idx, pb };
 }
 function pbBadges(s, pb){ const out = []; if(pb.b500 && pb.b500.id === s.id) out.push('PB 500m'); if(pb.b1k && pb.b1k.id === s.id) out.push('PB 1k'); if(pb.b2k && pb.b2k.id === s.id) out.push('PB 2k'); return out.map(t => '<span class="pb">' + t + '</span>').join(''); }
@@ -347,7 +347,7 @@ function rateCard(el, smpThis){
 /* ================= same workout over time ================= */
 function sameWorkout(sm, data){
   const idx = LS.get('sp_index', []), jg = !data.wk || data.wk.mode !== 'intervals';
-  return idx.filter(s => s.wkDesc === sm.wkDesc && (!jg || Math.abs(s.dist - sm.dist) <= Math.max(150, sm.dist * 0.15)) && s.time > 0 && s.dist > 50).sort((a, b) => a.start - b.start);
+  return idx.filter(s => (!window.TRN || TRN.owner(s) === TRN.owner(sm)) && s.wkDesc === sm.wkDesc && (!jg || Math.abs(s.dist - sm.dist) <= Math.max(150, sm.dist * 0.15)) && s.time > 0 && s.dist > 50).sort((a, b) => a.start - b.start);
 }
 function sameCard(el, sm, data){
   const L = sameWorkout(sm, data); if(L.length < 2){ el.remove(); return; }
@@ -371,7 +371,8 @@ function coxSave(id, A){
   const cats = {}; for(const c of A.cats) cats[c.k] = [c.n, c.ds, c.dr, c.m, c.c];
   const ph = {}; for(const c of A.calls){ const p = c.text.toLowerCase().replace(/[^a-z0-9' ]+/g, '').trim(); if(p.length < 2 || p.length > 40) continue; const o = ph[p] || (ph[p] = [0, 0, 0]); o[0]++; if(c.dSplit != null){ o[1] += c.dSplit; o[2]++; } }
   const sm = LS.get('sp_index', []).find(s => s.id === id);
-  R[id] = { start:sm ? sm.start : id, T:A.T, talk:A.talk, n:A.calls.length, cats, ph };
+  const calls = A.calls.slice(0, 300).map(c => [+c.start.toFixed(1), +c.t.toFixed(1), c.text.slice(0, 80), c.cat.k, c.cat.c, c.dSplit == null ? null : +c.dSplit.toFixed(1), Math.round(c.d || 0)]);
+  R[id] = { start:sm ? sm.start : id, T:A.T, talk:A.talk, n:A.calls.length, cats, ph, calls, v:2 };
   LS.set('sp_coxrep', R);
 }
 async function coxReport(){
@@ -381,7 +382,7 @@ async function coxReport(){
   const box = $a('crBody'), idx = LS.get('sp_index', []).filter(s => s.cox);
   const render = () => {
     const R = LS.get('sp_coxrep', {}), have = idx.filter(s => R[s.id] && R[s.id].n).sort((a, b) => a.start - b.start);
-    const missing = idx.filter(s => !R[s.id]);
+    const missing = idx.filter(s => !R[s.id] || (!R[s.id].empty && R[s.id].v !== 2));
     if(!have.length){ box.innerHTML = '<div class="card"><p>' + (missing.length ? 'Building the report from ' + missing.length + ' recorded session(s)…' : 'No cox sessions with transcribed calls yet. Turn on Cox mode, row with the mic on, and the report builds itself.') + '</p></div>'; return; }
     let T = 0, talk = 0, n = 0; const cats = {}, ph = {};
     for(const s of have){ const r = R[s.id]; T += r.T; talk += r.talk; n += r.n;
@@ -395,21 +396,34 @@ async function coxReport(){
     let h = '<div class="card"><div class="grid3">' + stat('Sessions', have.length) + stat('Calls', n) + stat('Calls / min', (T ? n / (T / 60) : 0).toFixed(1)) + '</div><div class="grid3" style="margin-top:10px">' + stat('Talk time', T ? Math.round(talk / T * 100) + '%' : '–') + stat('On the water', fmtTime(T)) + stat('Call types', C.length) + '</div>' +
       (missing.length ? '<p class="muted" style="margin-top:8px">Adding ' + missing.length + ' more session(s)…</p>' : '') + '</div>';
     h += '<div class="card"><h2>Session by session</h2><table><tr><th>Date</th><th>Calls</th><th>/min</th><th style="width:30%"></th><th>Talk</th></tr>' + have.slice().reverse().map(s => { const r = R[s.id];
-      return '<tr><td>' + new Date(s.start).toLocaleDateString(undefined, { month:'short', day:'numeric' }) + '</td><td>' + r.n + '</td><td>' + cpm(s).toFixed(1) + '</td><td><div class="segbar" style="width:' + Math.round(cpm(s) / maxC * 100) + '%"></div></td><td>' + (r.T ? Math.round(r.talk / r.T * 100) : 0) + '%</td></tr>'; }).join('') + '</table></div>';
-    h += '<div class="card"><h2>Which calls work best</h2><table><tr><th>Type</th><th>Calls</th><th>Split after</th><th>Rate after</th></tr>' + C.map((c, i) => '<tr class="' + (i === 0 && c.m && c.ds < 0 ? 'best' : '') + '"><td><span class="chip" style="background:' + c.c + '">' + c.k + '</span></td><td>' + c.n + '</td><td>' + (c.m ? sgn1(c.ds / c.m) + 's' : '—') + '</td><td>' + (c.m ? sgn1(c.dr / c.m) : '—') + '</td></tr>').join('') +
+      return '<tr data-sid="' + s.id + '" style="cursor:pointer"><td>' + new Date(s.start).toLocaleDateString(undefined, { month:'short', day:'numeric' }) + '</td><td>' + r.n + '</td><td>' + cpm(s).toFixed(1) + '</td><td><div class="segbar" style="width:' + Math.round(cpm(s) / maxC * 100) + '%"></div></td><td>' + (r.T ? Math.round(r.talk / r.T * 100) : 0) + '%</td></tr>'; }).join('') + '</table></div>';
+    h += '<div class="card"><h2>Which calls work best</h2><table><tr><th>Type</th><th>Calls</th><th>Split after</th><th>Rate after</th></tr>' + C.map((c, i) => '<tr data-cat="' + esc(c.k) + '" class="' + (i === 0 && c.m && c.ds < 0 ? 'best' : '') + '"><td><span class="chip" style="background:' + c.c + '">' + c.k + '</span></td><td>' + c.n + '</td><td>' + (c.m ? sgn1(c.ds / c.m) + 's' : '—') + '</td><td>' + (c.m ? sgn1(c.dr / c.m) : '—') + '</td></tr>').join('') +
       '</table><p class="muted" style="margin-top:6px">Across the whole season: change in the 20 s after each call vs the 20 s before. Negative split = faster. Best at the top.</p></div>';
-    if(good.length) h += '<div class="card"><h2>Calls that move the boat</h2>' + good.map(o => '<div class="row"><span>“' + esc(o.p) + '” <span class="muted">' + o.m + '×</span></span><b style="color:' + (o.e < 0 ? 'var(--good)' : 'var(--fg)') + '">' + sgn1(o.e) + 's</b></div>').join('') + '<p class="muted" style="margin-top:6px">Exact words used at least twice while the boat was moving.</p></div>';
-    if(bad.length) h += '<div class="card"><h2>Calls that don’t seem to help</h2>' + bad.map(o => '<div class="row"><span>“' + esc(o.p) + '” <span class="muted">' + o.m + '×</span></span><b style="color:var(--bad)">' + sgn1(o.e) + 's</b></div>').join('') + '</div>';
-    h += '<div class="card"><h2>Most used</h2>' + mostUsed.map(o => '<div class="row"><span>“' + esc(o.p) + '”</span><b>' + o.n + '×</b></div>').join('') + '</div>';
-    box.innerHTML = h;
+    if(good.length) h += '<div class="card"><h2>Calls that move the boat</h2>' + good.map(o => '<div class="row" data-ph="' + esc(o.p) + '"><span>“' + esc(o.p) + '” <span class="muted">' + o.m + '×</span></span><b style="color:' + (o.e < 0 ? 'var(--good)' : 'var(--fg)') + '">' + sgn1(o.e) + 's</b></div>').join('') + '<p class="muted" style="margin-top:6px">Exact words used at least twice while the boat was moving.</p></div>';
+    if(bad.length) h += '<div class="card"><h2>Calls that don’t seem to help</h2>' + bad.map(o => '<div class="row" data-ph="' + esc(o.p) + '"><span>“' + esc(o.p) + '” <span class="muted">' + o.m + '×</span></span><b style="color:var(--bad)">' + sgn1(o.e) + 's</b></div>').join('') + '</div>';
+    h += '<div class="card"><h2>Most used</h2>' + mostUsed.map(o => '<div class="row" data-ph="' + esc(o.p) + '"><span>“' + esc(o.p) + '”</span><b>' + o.n + '×</b></div>').join('') + '</div>';
+    box.innerHTML = h + '<p class="muted" style="text-align:center;margin-bottom:20px">Tap any session, call type or call to hear it.</p>';
+    box.querySelectorAll('[data-sid]').forEach(r => r.onclick = () => openDetail(+r.dataset.sid));
+    box.querySelectorAll('[data-cat]').forEach(r => r.onclick = () => callList(c => c[3] === r.dataset.cat, r.dataset.cat + ' calls', have));
+    box.querySelectorAll('[data-ph]').forEach(r => { r.style.cursor = 'pointer'; r.onclick = () => callList(c => c[2].toLowerCase().replace(/[^a-z0-9' ]+/g, '').trim() === r.dataset.ph, '“' + r.dataset.ph + '”', have); });
   };
   render();
   const R = LS.get('sp_coxrep', {});
-  for(const s of idx.filter(s => !R[s.id])){
+  for(const s of idx.filter(s => !R[s.id] || (!R[s.id].empty && R[s.id].v !== 2))){
     if(!$a('scr-coxrep').classList.contains('on')) break;
     try{ const A = window.COX && COX.analyseSession ? await COX.analyseSession(s.id) : null; if(A) coxSave(s.id, A); else { const R2 = LS.get('sp_coxrep', {}); R2[s.id] = { start:s.start, T:0, talk:0, n:0, cats:{}, ph:{}, empty:true }; LS.set('sp_coxrep', R2); } }catch(e){ break; }
     render();
   }
+}
+
+/* every matching call across the season; tap one to open that session at that moment */
+function callList(match, title, have){
+  const R = LS.get('sp_coxrep', {}), list = [];
+  for(const s of have){ const r = R[s.id]; if(!r || !r.calls) continue; for(const c of r.calls) if(match(c)) list.push({ sid:s.id, start:s.start, c }); }
+  list.sort((a, b) => (a.c[5] == null ? 99 : a.c[5]) - (b.c[5] == null ? 99 : b.c[5]));
+  openSheet('<h2 style="margin-bottom:4px">' + esc(title) + '</h2><p class="muted" style="margin-bottom:8px">' + list.length + ' call' + (list.length === 1 ? '' : 's') + ', best effect first. Tap one to hear it.</p>' +
+    (list.length ? list.slice(0, 150).map((o, i) => '<button class="opt" data-i="' + i + '" style="display:flex;gap:10px;align-items:center"><span style="flex:none;width:62px;font-size:13px;color:var(--dim)">' + new Date(o.start).toLocaleDateString(undefined, { month:'short', day:'numeric' }) + '<br>' + fmtTime(Math.max(0, o.c[1])) + '</span><span style="flex:1;font-size:16px"><span class="chip" style="background:' + o.c[4] + '">' + esc(o.c[3]) + '</span> ' + esc(o.c[2]) + '</span><b style="flex:none;font-size:15px;color:' + (o.c[5] == null ? 'var(--dim)' : o.c[5] < -0.4 ? 'var(--good)' : o.c[5] > 0.4 ? 'var(--bad)' : 'var(--fg)') + '">' + (o.c[5] == null ? '—' : sgn1(o.c[5]) + 's') + '</b></button>').join('') : '<p>No calls yet.</p>'),
+    el => el.querySelectorAll('[data-i]').forEach(b => b.onclick = () => { const o = list[+b.dataset.i]; closeSheet(); window.__cxSeek = { id:o.sid, t:o.c[0] }; openDetail(o.sid); }));
 }
 
 /* ================= session detail ================= */
@@ -433,6 +447,7 @@ async function detailWire(id, sm, data){
   const notes = $a('anaNotes'); if(notes) notes.addEventListener('change', () => { data.notes = notes.value.slice(0, 2000); saveData(id, data); toast('Note saved'); });
   if(!data.cox && $a('anaChart')){ const box = document.createElement('div'); $a('anaChart').appendChild(box); chart(box, [{ samples:data.samples || [] }]); }
   const anchor = $a('coxBox'), card = () => { const d = document.createElement('div'); d.className = 'card'; anchor.parentNode.insertBefore(d, anchor); return d; };
+  if(window.TRN) TRN.detailExtra(id, sm, data, $a('anaMap').closest('.card'));
   piecesCard(card(), data); segCard(card(), data.samples || []); rateCard(card(), data.samples || []); sameCard(card(), sm, data);
   drawMap($a('anaMap'), [{ samples:data.samples || [] }], { legendEl:$a('anaLegend') }).then(m => { MAP = m; if(m && pendingCalls) mapCalls(pendingCalls); }).catch(() => {});
   if(!data.weather && navigator.onLine){ try{ const wx = await fetchWeather(sm, data); if(wx){ data.weather = wx; saveData(id, data); if($a('anaWx')) $a('anaWx').innerHTML = wxHtml(wx, data.samples || []); } }catch(e){} }
@@ -447,7 +462,7 @@ function historyDecorate(){
   let tools = $a('histTools');
   if(!tools){ tools = document.createElement('div'); tools.id = 'histTools'; tools.style.cssText = 'display:flex;gap:8px;padding:10px 12px 0'; box.parentNode.insertBefore(tools, box); }
   const hasCox = idx.some(s => s.cox);
-  tools.innerHTML = (idx.length >= 2 ? '<button class="big alt" id="cmpStart" style="margin:0;flex:1">Compare</button>' : '') + (hasCox ? '<button class="big alt" id="coxRep" style="margin:0;flex:1">🎙 Cox report</button>' : '');
+  tools.innerHTML = (window.TRN && TRN.profiles().length > 1 ? TRN.chip() : '') + (idx.filter(s => !window.TRN || TRN.mine(s)).length >= 2 ? '<button class="big alt" id="cmpStart" style="margin:0;flex:1">Compare</button>' : '') + (hasCox ? '<button class="big alt" id="coxRep" style="margin:0;flex:1">🎙 Cox report</button>' : '');
   tools.style.display = tools.innerHTML ? 'flex' : 'none';
   if($a('cmpStart')) $a('cmpStart').onclick = () => { picking = !picking; picked = []; historyDecorate(); renderBar(); };
   if($a('coxRep')) $a('coxRep').onclick = () => { picking = false; picked = []; renderBar(); coxReport(); };
@@ -522,6 +537,6 @@ function openCompare(ids){
 }
 
 /* ================= exports ================= */
-window.ANA = { kg, coxSave, coxReport, pieces, steadiness, rateCurve, sameWorkout, met, kcal, bests, segments, summary, heading, windText, detailHtml, detailWire, historyDecorate, openCompare, fetchWeather,
+window.ANA = { ensureCache, workRuns, bestFor, kg, coxSave, coxReport, pieces, steadiness, rateCurve, sameWorkout, met, kcal, bests, segments, summary, heading, windText, detailHtml, detailWire, historyDecorate, openCompare, fetchWeather,
   cursor:t => mapCursor(t), calls:c => { pendingCalls = c; if(MAP) mapCalls(c); }, leaving:() => { picking = false; picked = []; renderBar(); } };
 })();

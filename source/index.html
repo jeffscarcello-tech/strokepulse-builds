@@ -117,6 +117,52 @@ canvas{width:100%;display:block;border-radius:8px;background:var(--bg)}
 .ver{text-align:center;color:var(--dim);font-size:13px;padding:14px 0 4px}
 /* pop-up messages sit just under the status bar and never block taps */
 .toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 44px);transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:8px 14px;border-radius:10px;font-weight:700;font-size:15px;display:none;z-index:30;max-width:92%;text-align:center;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.35)}
+
+/* ===== look & feel (v3.3) ===== */
+:root{--hot:#ff9f1c;--r:16px;--card:linear-gradient(180deg,#121922 0%,#0d1218 100%);--edge:rgba(255,255,255,.06)}
+body.glare{--hot:#b85600;--card:var(--panel);--edge:var(--line)}
+body.night{--hot:var(--dim);--card:var(--panel);--edge:var(--line)}
+.screen:not(#scr-live){background:radial-gradient(900px 340px at 50% -120px,rgba(47,155,255,.13),transparent 70%),var(--bg)}
+body.glare .screen:not(#scr-live),body.night .screen:not(#scr-live){background:var(--bg)}
+.top{border-bottom:1px solid var(--edge);padding:12px 14px;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+.top h1{font-size:24px;font-weight:850;letter-spacing:-.5px}
+.iconbtn{border:1px solid var(--edge);border-radius:10px;font-weight:700}
+.card{background:var(--card);border:1px solid var(--edge);border-radius:var(--r);padding:16px;margin-bottom:14px;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+body.glare .card{box-shadow:none}
+.card h2{font-size:12px;color:var(--hot);letter-spacing:2px;font-weight:800;margin-bottom:12px}
+.stat .k{font-size:11px;letter-spacing:1px;font-weight:700}
+.stat .v{font-size:24px;letter-spacing:-.5px}
+.big{border-radius:14px;background:linear-gradient(180deg,#3aa6ff,#1f74ff);box-shadow:0 6px 18px rgba(31,116,255,.3)}
+.big.alt{background:var(--card);box-shadow:none;border:1px solid var(--edge)}
+.big.red{background:linear-gradient(180deg,#ff6163,#e5383b);box-shadow:none}
+body.glare .big,body.night .big{background:var(--acc);box-shadow:none}
+body.glare .big.alt,body.night .big.alt{background:var(--panel)}
+.seg{border-radius:12px;border:1px solid var(--edge)}
+.seg button{border-radius:9px;font-weight:600}
+.seg button.on{background:linear-gradient(180deg,#3aa6ff,#1f74ff);box-shadow:0 3px 10px rgba(31,116,255,.35)}
+body.glare .seg button.on,body.night .seg button.on{background:var(--acc);box-shadow:none}
+.list .item{background:var(--card);border:1px solid var(--edge);border-radius:var(--r);padding:14px 16px;position:relative;overflow:hidden}
+.list .item::before{content:"";position:absolute;left:0;top:12px;bottom:12px;width:4px;border-radius:0 4px 4px 0;background:var(--acc)}
+.item .t1{font-size:17px;font-weight:800}
+.controls button{border-radius:18px;border:1px solid var(--edge)}
+.btn-go{background:linear-gradient(180deg,#3be08a,#1fb866)!important;border:0!important}
+.btn-stop{background:linear-gradient(180deg,#ff6163,#e5383b)!important;border:0!important}
+.btn-lap{background:linear-gradient(180deg,#3aa6ff,#1f74ff)!important;border:0!important}
+body.glare .btn-go,body.night .btn-go{background:var(--good)!important}body.glare .btn-stop,body.night .btn-stop{background:var(--bad)!important}body.glare .btn-lap,body.night .btn-lap{background:var(--acc)!important}
+.status .brand{background:linear-gradient(90deg,#5ab4ff,#9b8cff);-webkit-background-clip:text;background-clip:text;color:transparent;font-weight:900}
+body.glare .status .brand,body.night .status .brand{background:none;color:var(--acc)}
+.f .lab{font-size:12px;letter-spacing:1.5px}
+canvas{border-radius:12px}
+input[type=number],input[type=text].mini,input.codein{border-radius:10px;border-color:var(--edge)}
+.numin{width:84px!important}
+.sheet .in{border-radius:22px 22px 0 0;border-top:1px solid var(--edge)}
+.sheet .in::before{content:"";display:block;width:40px;height:5px;border-radius:3px;background:var(--line);margin:-6px auto 12px}
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+.tiles button{background:var(--card);border:1px solid var(--edge);border-radius:var(--r);padding:14px 6px 12px;font-weight:800;font-size:15px;display:flex;flex-direction:column;align-items:center;gap:4px;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+.tiles button span{font-size:28px}
+.tiles button small{font-size:11px;color:var(--dim);font-weight:600}
+body.glare .tiles button{box-shadow:none}
+.ver{opacity:.7}
 </style>
 </head>
 <body>
@@ -140,6 +186,14 @@ canvas{width:100%;display:block;border-radius:8px;background:var(--bg)}
 <section class="screen" id="scr-menu">
   <div class="top"><button class="iconbtn" data-go="live">‹ Back</button><h1>Menu</h1></div>
   <div class="body">
+    <div class="tiles"><button data-go="history"><span>📋</span>History</button><button id="mProg"><span>📈</span>Progress<small>Goals · Trophies</small></button><button data-go="settings"><span>⚙️</span>Settings</button></div>
+    <div class="card"><h2>Rower</h2>
+      <div class="row"><span id="mChip"></span><span><input id="stWeight" type="number" inputmode="decimal" class="numin"> <span id="stWUnit" class="muted"></span></span></div>
+      <p class="muted" style="padding-top:6px;font-size:13px">Tap the name to switch rowers or add one. Weight is only used for calories.</p>
+    </div>
+    <div class="card"><h2>Main screen</h2>
+      <div class="row"><span>Boxes on main screen</span><div class="seg" data-set="layout"><button data-v="3">3</button><button data-v="4">4</button><button data-v="6">6</button></div></div>
+    </div>
     <div class="card"><h2>Workout</h2>
       <div class="row"><span>Mode</span><div class="seg" id="wkMode"><button data-v="justgo">Just Go</button><button data-v="intervals">Intervals</button></div></div>
       <div id="wkInt">
@@ -163,8 +217,6 @@ canvas{width:100%;display:block;border-radius:8px;background:var(--bg)}
       <div class="row"><span>Alert sound</span><div class="seg" id="daSound"><button data-v="beep">Beeps</button><button data-v="voice">Say the distance</button></div></div>
       <p class="muted" style="padding-top:8px">Counts from the start of the session, or from the start of each piece in an interval workout. "Say the distance" reads out the number (e.g. "750") through the phone or boat speakers; the target gets "Target reached".</p>
     </div>
-    <button class="big" data-go="history">Session History</button>
-    <button class="big alt" data-go="settings">Settings</button>
     <button class="big alt" data-go="help">iPhone Setup Tips</button>
     <p class="ver">StrokePulse <b>v__LABEL__</b> · build __BUILD__</p>
   </div>
@@ -178,7 +230,6 @@ canvas{width:100%;display:block;border-radius:8px;background:var(--bg)}
       <div class="row"><span>Sport</span><div class="seg" data-set="sport"><button data-v="row">Rowing</button><button data-v="paddle">Paddling</button></div></div>
       <div class="row"><span>Split per</span><div class="seg" data-set="splitBase"><button data-v="500">500 m</button><button data-v="1000">1 km</button><button data-v="1609.344">1 mi</button></div></div>
       <div class="row"><span>Distance / speed</span><div class="seg" data-set="units"><button data-v="metric">Metric</button><button data-v="imperial">Imperial</button></div></div>
-      <div class="row"><span>Your weight <span class="muted" style="font-weight:400">(for calories)</span></span><span><input id="stWeight" type="number" inputmode="decimal" style="width:84px;height:40px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font-size:17px;text-align:center"> <span id="stWUnit" class="muted"></span></span></div>
     </div>
     <div class="card"><h2>Sensors</h2>
       <div class="row"><span>Split averaging</span><div class="seg" data-set="smooth"><button data-v="st3">3 strokes</button><button data-v="st5">5 strokes</button><button data-v="2">2 sec</button><button data-v="5">5 sec</button></div></div>
@@ -188,7 +239,6 @@ canvas{width:100%;display:block;border-radius:8px;background:var(--bg)}
     </div>
     <div class="card"><h2>Display &amp; Sound</h2>
       <div class="row"><span>Screen (also the ☀︎ button)</span><div class="seg" data-set="theme"><button data-v="dark">Dark</button><button data-v="bright">Bright</button><button data-v="night">Night</button></div></div>
-      <div class="row"><span>Boxes on main screen</span><div class="seg" data-set="layout"><button data-v="3">3</button><button data-v="4">4</button><button data-v="6">6</button></div></div>
       <div class="row"><span>Beeps (intervals)</span><div class="seg" data-set="sound"><button data-v="1">On</button><button data-v="0">Off</button></div></div>
       <div class="row"><span>Demo mode (fake boat, for testing on land)</span><div class="seg" data-set="demo"><button data-v="0">Off</button><button data-v="1">On</button></div></div>
     </div>
@@ -334,7 +384,7 @@ function strokeAvgV(n){
 const curV = () => (Date.now()-gps.lastGood > 5000 ? 0 : (S.smooth.startsWith('st') ? strokeAvgV(+S.smooth.slice(2)) : gps.v));
 
 /* ---------- stroke rate (motion sensor) ---------- */
-const mot = { on:false, last:0, g:[0,0,0], gInit:false, lp:[0,0,0], dc:[0,0,0], C:[1e-3,0,0, 0,1e-3,0, 0,0,1e-3], ax:[1,0,0], rms2:1e-3, st:0,
+const mot = { on:false, last:0, buf:[], g:[0,0,0], gInit:false, lp:[0,0,0], dc:[0,0,0], C:[1e-3,0,0, 0,1e-3,0, 0,0,1e-3], ax:[1,0,0], rms2:1e-3, st:0,
   lastStroke:0, periods:[], rate:0, count:0 };
 async function startMotion(){
   try{
@@ -367,6 +417,7 @@ function processAccel(raw, tSec){
   const s=b[0]*mot.ax[0]+b[1]*mot.ax[1]+b[2]*mot.ax[2];
   mot.rms2 += 0.003*(s*s-mot.rms2);
   if(window.COX) COX.accel(s);
+  mot.buf.push([tSec,s]); if(mot.buf.length>600) mot.buf.splice(0,200);
   const T = Math.max(0.06, 0.55*Math.sqrt(mot.rms2)/(+S.sens));
   if(mot.st<=0 && s>T) mot.st=1;
   else if(mot.st===1 && s<-T){ mot.st=-1; strokeEvent(tSec); }
@@ -377,13 +428,18 @@ function strokeEvent(tSec){
   if(mot.lastStroke && p < minP) return;
   if(mot.lastStroke && p < 8){ mot.periods.push(p); if(mot.periods.length>3) mot.periods.shift(); }
   else mot.periods=[];
-  mot.lastStroke=tSec;
+  const prevStroke=mot.lastStroke; mot.lastStroke=tSec;
+  if(prevStroke && p>=0.85 && p<=4 && run && !run.armed && run.phase!=='rest' && curV()>1) curveAdd(prevStroke, tSec);
   if(mot.periods.length){ const avg=mot.periods.reduce((a,b)=>a+b,0)/mot.periods.length; mot.rate=60/avg; }
   if(window.COX) COX.stroke();
   strokeWall.push(Date.now()); if(strokeWall.length>30) strokeWall.shift();
   if(run && run.armed){ armStroke(); return; }
   if(run) run.strokes++;
 }
+/* average boat-acceleration shape of one stroke (catch to catch), 40 points */
+function curveAdd(a,b){ const n=40, sum=new Array(n).fill(0), cnt=new Array(n).fill(0);
+  for(const q of mot.buf){ if(q[0]<a||q[0]>=b) continue; const k=Math.min(n-1,Math.floor((q[0]-a)/(b-a)*n)); sum[k]+=q[1]; cnt[k]++; }
+  if(cnt.some(c=>!c)) return; const cv=run.curve||(run.curve={n:0,a:new Array(n).fill(0)}); cv.n++; for(let i=0;i<n;i++) cv.a[i]+=sum[i]/cnt[i]; }
 /* auto-start: begin recording once two strokes land within 6 seconds of each other */
 function armStroke(){
   const now=Date.now();
@@ -517,17 +573,17 @@ function stopSession(){
   if(wakeLock){ try{wakeLock.release();}catch(e){} wakeLock=null; }
   LS.del('sp_live');
   if(r.dist<20 && r.samples.length<20){ toast('Too short — not saved'); renderControls(); return; }
-  saveSession(r); renderControls(); beep(500,400); setTimeout(syncNow, 500);
+  saveSession(r); if(window.TRN) TRN.afterSave(r.id); renderControls(); beep(500,400); setTimeout(syncNow, 500);
   openDetail(r.id);
 }
 function summarize(r){
   const T = r.samples.length ? r.samples[r.samples.length-1][0] : 0;
-  return { id:r.id, start:r.start, dist:r.dist, time:T, strokes:r.strokes, sport:r.sport, mode:r.wk.mode, cox:!!r.cox,
+  return { id:r.id, who:window.TRN?TRN.cur().id:undefined, start:r.start, dist:r.dist, time:T, strokes:r.strokes, sport:r.sport, mode:r.wk.mode, cox:!!r.cox,
     wkDesc: r.wk.mode==='intervals' ? wkDesc(r.wk) : 'Just Go' };
 }
 function saveSession(r){
   const idx=LS.get('sp_index',[]);
-  if(LS.set('sp_s_'+r.id, {samples:r.samples, laps:r.laps, wk:r.wk, crew:r.crew, cox:r.cox?{rec:r.cox.rec,chunks:[]}:undefined})){ idx.unshift(summarize(r)); LS.set('sp_index', idx); }
+  if(LS.set('sp_s_'+r.id, {samples:r.samples, laps:r.laps, wk:r.wk, crew:r.crew, curve:r.curve&&r.curve.n?{n:r.curve.n,a:r.curve.a.map(v=>+(v/r.curve.n).toFixed(3))}:undefined, cox:r.cox?{rec:r.cox.rec,chunks:[]}:undefined})){ idx.unshift(summarize(r)); LS.set('sp_index', idx); }
 }
 function wkDesc(w){ const v = w.type==='dist' ? (w.val>=1000 && w.val%1000===0 ? (w.val/1000)+'k' : w.val+'m') : fmtTime(w.val);
   return w.reps+' × '+v+(w.rest>0?' / '+fmtTime(w.rest)+' rest':''); }
@@ -654,6 +710,12 @@ $('sheet').onclick=e=>{ if(e.target.id==='sheet') closeSheet(); };
 function segBind(el, val, cb){ el.querySelectorAll('button').forEach(b=>{ b.classList.toggle('on', b.dataset.v===String(val)); b.onclick=()=>{ cb(b.dataset.v); }; }); }
 function renderMenu(){
   if(window.COX) COX.menu();
+  document.querySelectorAll('#scr-menu [data-set]').forEach(el=>{ const k=el.dataset.set; segBind(el, S[k], v=>{ S[k]=v; saveSettings(); if(k==='layout') buildFields(); renderMenu(); }); });
+  if(window.TRN){ $('mChip').innerHTML=TRN.chip(); $('mProg').onclick=()=>TRN.open(); }
+  const wi=$('stWeight'), wImp=S.units==='imperial'; $('stWUnit').textContent=wImp?'lb':'kg';
+  const wk0=window.TRN?(+TRN.cur().kg||0):(+S.weightKg||0); wi.value = wk0 ? (wImp ? Math.round(wk0/0.4536) : Math.round(wk0)) : ''; wi.placeholder = wImp ? '154' : '70';
+  wi.onchange=()=>{ const v=+wi.value; const kgv = v>0 ? +(wImp ? v*0.4536 : v).toFixed(1) : 0; if(window.TRN) TRN.setKg(kgv); else { S.weightKg=kgv; saveSettings(); } toast(v>0?'Weight saved':'Weight cleared'); };
+
   const w=S.wk;
   segBind($('wkMode'), w.mode, v=>{ w.mode=v; saveSettings(); renderMenu(); });
   segBind($('wkType'), w.type, v=>{ w.type=v; w.val = v==='dist'?1000:240; saveSettings(); renderMenu(); });
@@ -682,11 +744,8 @@ $('tClear').onclick=()=>{ S.wk.tr=[null,null]; S.wk.ts=[null,null]; saveSettings
   saveSettings(); renderMenu(); }));
 
 function renderSettings(){
-  document.querySelectorAll('[data-set]').forEach(el=>{ const k=el.dataset.set;
+  document.querySelectorAll('#scr-settings [data-set]').forEach(el=>{ const k=el.dataset.set;
     segBind(el, S[k], v=>{ S[k]=v; if(k==='sport') S.splitBase = v==='row'?'500':'1000'; saveSettings(); applyGlare(); if(k==='layout') buildFields(); renderSettings(); }); });
-  const wi=$('stWeight'), wImp=S.units==='imperial'; $('stWUnit').textContent=wImp?'lb':'kg';
-  wi.value = S.weightKg ? (wImp ? Math.round(S.weightKg/0.4536) : Math.round(S.weightKg)) : ''; wi.placeholder = wImp ? '154' : '70';
-  wi.onchange=()=>{ const v=+wi.value; S.weightKg = v>0 ? +(wImp ? v*0.4536 : v).toFixed(1) : 0; saveSettings(); const idx=LS.get('sp_index',[]); idx.forEach(x=>delete x.cv); LS.set('sp_index',idx); toast(v>0?'Weight saved':'Weight cleared'); };
   renderBackup();
   if(window.COX) COX.settings();
 }
@@ -695,8 +754,8 @@ function applyGlare(){ document.body.classList.toggle('glare', S.theme==='bright
 
 /* ---------- history ---------- */
 function renderHistory(){
-  const idx=LS.get('sp_index',[]); const box=$('histList');
-  if(!idx.length){ box.innerHTML='<p class="muted">No sessions yet. Press START on the main screen to record one.</p>'; return; }
+  const idx=LS.get('sp_index',[]).filter(s=>!window.TRN||TRN.mine(s)); const box=$('histList');
+  if(!idx.length){ box.innerHTML='<p class="muted">No sessions yet'+(window.TRN&&TRN.profiles().length>1?' for '+TRN.cur().name:'')+'. Press START on the main screen to record one.</p>'; if(window.ANA) ANA.historyDecorate(); return; }
   box.innerHTML=idx.map(s=>{ const d=new Date(s.start);
     return '<button class="item" data-id="'+s.id+'"><div class="t1">'+d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})+' · '+clock12(d)+'</div>'+
       '<div class="t2">'+fmtDist(s.dist)+' '+distUnit(s.dist)+' · '+fmtTime(s.time)+' · avg '+(s.time>0?fmtSplit(s.dist/s.time):'–')+splitLabel()+' · '+(s.time>0?(s.strokes/s.time*60).toFixed(1):0)+' spm · '+s.wkDesc+(s.cox?' · 🎙':'')+(s.synced?' · ☁︎':'')+'</div></button>'; }).join('');
@@ -864,5 +923,6 @@ window.__SP = { processAccel, strokeEvent, mot, S, handleFix, gps }; // test hoo
 </script>
 <script src="/cox.js?v=__BUILD__"></script>
 <script src="/analytics.js?v=__BUILD__"></script>
+<script src="/train.js?v=__BUILD__"></script>
 </body>
 </html>
