@@ -229,7 +229,7 @@ function recentWeekly(L){ const w0 = thisWeek(), a = L.filter(s => inRange(s, w0
 function makePlan(g, L){
   const r = g.race, gs = SB() * r.time / r.dist, days = Math.max(3, Math.min(7, +r.days || 5));
   const w0 = thisWeek(), wEnd = weekStart(new Date(r.by + 'T12:00').getTime()); let nW = Math.round((wEnd - w0) / (7 * DAY)) + 1; nW = Math.max(1, Math.min(16, nW));
-  const base = Math.max(recentWeekly(L).m, days * 4500);
+  const base = Math.max(recentWeekly(L).m, days * 4500) * Math.max(0.7, Math.min(1.3, +r.adj || 1));
   const R = (a, b) => 'rate ' + a + '–' + b;
   const T = {
     rec:() => ({ t:'rec', n:'Recovery row', d:'30 min easy, ' + R(16, 18) + ', split around ' + sTxt(gs + 30), m:5000 }),
@@ -256,6 +256,9 @@ function makePlan(g, L){
       const fixed = ses.filter(Boolean).reduce((a, s) => a + s.m, 0), nss = ses.filter(s => !s).length;
       const each = Math.max(6000, Math.min(18000, Math.round((target - fixed) / Math.max(1, nss) / 500) * 500));
       ses = ses.map(s => s || T.ss(each));
+      // weekly check-ins can tilt the mix: more speed work, or more long steady rows
+      if(r.focus === 'speed' && !last && !deload){ const k = ses.map(x => x.t).lastIndexOf('ss'); if(k > 0 && ses.filter(x => x.t === 'ss').length > 1) ses[k] = Object.assign(T.race(i + 1), { n:T.race(i + 1).n + ' (extra speed)' }); }
+      if(r.focus === 'endurance' && !last && !deload){ const k = ses.map(x => x.t).lastIndexOf('int'); if(k >= 0 && ses.filter(x => x.t === 'int').length > 1) ses[k] = T.ss(Math.min(18000, each + 2000)); else { const j = ses.findIndex(x => x.t === 'ss'); if(j >= 0) ses[j] = T.ss(Math.min(20000, each + 3000)); } }
     }
     const m = ses.reduce((a, s) => a + s.m, 0);
     weeks.push({ i, start:w0 + i * 7 * DAY, label:last ? 'Race week' : deload ? 'Lighter week' : i < nW / 2 ? 'Base' : 'Build', ses, m });
@@ -432,8 +435,92 @@ function crewSheet(prefill){
 function checkJoinLink(){ const m = /^#join=([A-Za-z0-9]{6})$/.exec(location.hash); if(!m) return; history.replaceState(null, '', location.pathname); setTimeout(() => { open('board'); crewSheet(m[1].toUpperCase()); }, 600); }
 let BS = LS.get('sp_bscope', null);
 
+/* ================= weekly check-in: progress vs the on-track line, and the plan adjusted to match ================= */
+function recentPredict(L, D){ const rec = L.filter(s => s.start >= Date.now() - 42 * DAY); return predict(rec.length >= 2 ? rec : L, D); }
+function onTrackAt(r, t){ const t0 = r.set || Date.now(), t1 = new Date(r.by + 'T12:00').getTime(), s0 = r.startT || r.time; const f = Math.max(0, Math.min(1, (t - t0) / ((t1 - t0) || 1))); return s0 + (r.time - s0) * f; }
+function reportWeek(){ const d = new Date(); return d.getDay() === 0 ? thisWeek() : thisWeek() - 7 * DAY; }   // Sunday: this week so far; other days: last week
+function buildCheckin(g, L, wk){
+  const r = g.race, end = wk + 7 * DAY, inW = L.filter(s => inRange(s, wk, end)), m = inW.reduce((a, s) => a + s.dist, 0);
+  const planned = r.next && r.next.w === wk ? r.next : (() => { const p0 = makePlan(g, L).weeks[0]; return { n:p0.ses.length, m:p0.m }; })();
+  const upto = L.filter(s => s.start < end), pr = recentPredict(upto, r.dist), need = onTrackAt(r, Math.min(end, Date.now()));
+  const prevKeys = Object.keys(r.checks || {}).map(Number).filter(k => k < wk).sort((a, b) => a - b), prev = prevKeys.length ? r.checks[prevKeys[prevKeys.length - 1]] : null;
+  const per = sec => sec * SB() / r.dist;   // race seconds → seconds per 500 m
+  const behind = pr ? per(pr.t - need) : null, comp = planned.n ? inW.length / planned.n : 1, vol = planned.m ? m / planned.m : 1;
+  // where will the trend land on race day?
+  const pts = prevKeys.map(k => [k, r.checks[k].pred]).filter(x => x[1]).concat(pr ? [[wk, pr.t]] : []);
+  let proj = null; if(pts.length >= 2){ const n = pts.length, mx = pts.reduce((a, x) => a + x[0], 0) / n, my = pts.reduce((a, x) => a + x[1], 0) / n; let sxy = 0, sxx = 0; pts.forEach(x => { sxy += (x[0] - mx) * (x[1] - my); sxx += (x[0] - mx) ** 2; }); const sl = sxx ? sxy / sxx : 0; const tBy = new Date(r.by + 'T12:00').getTime(), wl = Math.max(0, (tBy - end) / (7 * DAY)), last = pts[pts.length - 1][1]; proj = my + sl * (tBy - mx);
+    proj = Math.min(last + wl * r.dist / SB() * 0.5, Math.max(proj, last - wl * r.dist / SB() * 1.0, r.time * 0.9)); }   // realistic: at most ~1 s/500 m better per week
+  const F = fitness(upto), sh = shape(upto);
+  let status = behind == null ? 'nodata' : behind <= -1 ? 'ahead' : behind <= 0.8 ? 'on' : behind <= 2.5 ? 'close' : 'behind';
+  const tips = [], changes = []; let adj = +r.adj || 1, focus = r.focus || null;
+  if(comp < 0.6){ tips.push(['🗓', 'Only ' + inW.length + ' of ' + planned.n + ' sessions', 'Getting the sessions in matters more than anything else. Pick fixed days and protect them.']); if(comp < 0.4 && adj > 0.8){ adj = Math.max(0.8, adj - 0.1); changes.push('Weekly distance lowered 10% so the plan fits your schedule'); } }
+  if(F.form < -25){ adj = Math.max(0.75, adj - 0.1); changes.push('Lighter week: distance down 10% — you’re carrying fatigue (form ' + Math.round(F.form) + ')'); }
+  else if((status === 'behind' || status === 'close') && comp >= 0.8){
+    if(adj < 1.25){ adj = Math.min(1.25, adj + 0.05); changes.push('Weekly distance up 5%'); }
+    const lim = sh.short != null && sh.long != null ? (sh.long - sh.short > 0.02 ? 'endurance' : sh.short - sh.long > 0.02 ? 'speed' : null) : null;
+    const f2 = lim || (focus === 'speed' ? 'speed' : 'speed');
+    if(f2 !== focus){ focus = f2; changes.push(focus === 'speed' ? 'One steady row swapped for extra race-pace work' : 'One interval swapped for a longer steady row to build your base'); }
+    tips.push(['📈', 'Do the plan, then a bit more', 'You did the work but the pace isn’t there yet. The plan now has ' + (focus === 'speed' ? 'more race-pace work' : 'more long steady rowing') + '.']); }
+  else if(status === 'ahead'){ if(focus){ focus = null; changes.push('Back to the standard mix'); } tips.push(['🎉', 'Ahead of schedule', 'Your form predicts ' + fmtTime(pr.t) + '.' + (proj && proj < r.time - 2 ? ' At this rate you could reach about ' + fmtTime(Math.round(proj)) + ' — consider a tougher target with Edit goal.' : ' Keep it up — you’re ahead of the on-track line.')]); }
+  else if(status === 'on'){ tips.push(['✅', 'Right on track', 'Keep doing exactly this.']); }
+  if(status === 'behind' && proj && proj > r.time + 3){ tips.push(['🎯', 'At this rate: ' + fmtTime(Math.round(proj)) + ' on race day', 'That’s ' + Math.round(proj - r.time) + ' s off the goal. Either push the date back, or aim for ' + fmtTime(Math.round(proj - 2)) + ' — then raise it again when you catch up.']); }
+  if(vol > 1.3) tips.push(['⚠️', 'Lots of extra distance', 'You rowed ' + Math.round(vol * 100) + '% of the planned distance. More isn’t always better — keep the easy days easy.']);
+  if(!inW.length) tips.push(['🛶', 'No rows this week', 'Start with the first session of this week’s plan — even a short one.']);
+  return { w:wk, at:Date.now(), n:inW.length, pn:planned.n, m, pm:planned.m, pred:pr ? pr.t : null, need, behind, status, proj, tips, changes, adj, focus, form:F.form, prevPred:prev ? prev.pred : null };
+}
+const STAT = { ahead:['Ahead of schedule', '#2ed47a'], on:['On track', '#2ed47a'], close:['Slightly behind', '#ffd400'], behind:['Behind schedule', '#ff6b6b'], nodata:['Not enough data yet', 'var(--dim)'] };
+function checkin(force){
+  const p = cur(), g = goalOf(p.id), r = g.race; if(!r) return false;
+  if(window.run && !run.armed) return false;
+  const wk = reportWeek(); r.checks = r.checks || {};
+  if(!force && (r.checks[wk] || (r.set || 0) > wk + 6 * DAY || (r.set || 0) > Date.now() - 2 * DAY)) return false;
+  ensure(); const L = sessionsOf(p.id), c = buildCheckin(g, L, wk);
+  r.checks[wk] = c; r.adj = c.adj; r.focus = c.focus;
+  const nx = makePlan(g, L).weeks[0]; r.next = { w:reportWeek() === thisWeek() ? thisWeek() + 7 * DAY : thisWeek(), n:nx.ses.length, m:nx.m };
+  setGoal(p.id, g); showCheckin(wk); return true;
+}
+function showCheckin(wk){
+  const p = cur(), g = goalOf(p.id), r = g.race; if(!r || !r.checks || !r.checks[wk]) return; const c = r.checks[wk], st = STAT[c.status] || STAT.nodata;
+  const d1 = new Date(wk), d2 = new Date(wk + 6 * DAY), f = d => d.toLocaleDateString(undefined, { month:'short', day:'numeric' });
+  const row = t => '<div class="tip"><span class="ic">' + t[0] + '</span><div><b>' + esc(t[1]) + '</b><p>' + esc(t[2]) + '</p></div></div>';
+  openSheet('<div class="muted" style="font-size:12px;letter-spacing:1.5px;text-transform:uppercase">' + esc(p.name) + ' · weekly check-in · ' + f(d1) + '–' + f(d2) + '</div>' +
+    '<div style="font-size:26px;font-weight:900;margin:4px 0 2px;color:' + st[1] + '">' + st[0] + '</div>' +
+    '<div class="muted" style="margin-bottom:10px">Goal: ' + fmtTime(r.time) + ' for ' + r.dist.toLocaleString() + ' m by ' + new Date(r.by + 'T12:00').toLocaleDateString(undefined, { month:'short', day:'numeric' }) + '</div>' +
+    '<div class="grid3">' + stat('Sessions', c.n + ' / ' + c.pn) + stat('Distance', kmTxt(c.m)) + stat('Predicted', c.pred ? fmtTime(c.pred) : '–') + '</div>' +
+    '<div style="margin-top:8px">' + pbarHtml(c.pn ? c.n / c.pn : 0) + '</div>' +
+    (c.pred && c.prevPred ? '<p class="muted" style="margin-top:6px;font-size:13px">' + (c.pred <= c.prevPred ? '▼ ' + (c.prevPred - c.pred).toFixed(1) + ' s faster' : '▲ ' + (c.pred - c.prevPred).toFixed(1) + ' s slower') + ' than last check-in · on-track pace for now: ' + fmtTime(c.need) + '</p>' : c.pred ? '<p class="muted" style="margin-top:6px;font-size:13px">On-track time for now: ' + fmtTime(c.need) + '</p>' : '') +
+    '<canvas id="ciSheet" style="width:100%;height:170px;display:block;margin-top:10px"></canvas><div class="lg"><span><i style="background:var(--dim)"></i>On-track line</span><span><i style="background:#2f9bff"></i>Your predicted time</span><span><i style="background:#ff9f1c"></i>Where you’re heading</span></div>' +
+    (c.changes.length ? '<h2 style="margin:14px 0 4px;font-size:12px;letter-spacing:2px;color:#ff9f1c">PLAN CHANGES FOR THIS WEEK</h2>' + c.changes.map(x => '<div class="row" style="padding:6px 0">🔧 ' + esc(x) + '</div>').join('') : '') +
+    (c.tips.length ? '<h2 style="margin:14px 0 4px;font-size:12px;letter-spacing:2px;color:#ff9f1c">SUGGESTIONS</h2>' + c.tips.map(row).join('') : '') +
+    '<button class="big" id="ciOk" style="margin-top:14px">See this week’s plan</button>',
+    el => { drawTrack2($t('ciSheet'), g, sessionsOf(p.id), wk); $t('ciOk').onclick = () => { closeSheet(); EDIT = false; open('goals'); }; });
+}
+/* predicted race time week by week against the straight on-track line, plus the trend to race day */
+function drawTrack2(cv, g, L, upto){
+  const r = g.race, ks = Object.keys(r.checks || {}).map(Number).filter(k => !upto || k <= upto).sort((a, b) => a - b), pts = ks.map(k => [k + 6 * DAY, r.checks[k].pred]).filter(x => x[1]);
+  const t0 = r.set || Date.now(), t1 = new Date(r.by + 'T12:00').getTime(), s0 = r.startT || r.time;
+  const last = upto ? r.checks[upto] : (ks.length ? r.checks[ks[ks.length - 1]] : null);
+  const vals = [s0, r.time].concat(pts.map(x => x[1])).concat(last && last.proj ? [last.proj] : []); let lo = Math.min(...vals), hi = Math.max(...vals); const pad = Math.max(2, (hi - lo) * 0.15); lo -= pad; hi += pad;
+  const [x, w, h] = canvasFit2(cv), Lx = 42, Rx = w - 8, T = 8, B = h - 20, X = t => Lx + (Rx - Lx) * (t - t0) / ((t1 - t0) || 1), Y = v => T + (B - T) * (v - lo) / (hi - lo);   // faster = higher
+  x.font = '11px -apple-system,sans-serif'; x.fillStyle = cssVar('--dim'); x.strokeStyle = cssVar('--line'); x.lineWidth = 1; x.textAlign = 'right';
+  [s0, r.time].forEach(v => { x.fillText(fmtTime(v), Lx - 4, Y(v) + 4); x.beginPath(); x.moveTo(Lx, Y(v)); x.lineTo(Rx, Y(v)); x.stroke(); });
+  x.textAlign = 'left'; x.fillText('goal set', Lx, h - 5); x.textAlign = 'right'; x.fillText('race day', Rx, h - 5);
+  x.strokeStyle = cssVar('--dim'); x.setLineDash([5, 5]); x.lineWidth = 2; x.beginPath(); x.moveTo(X(t0), Y(s0)); x.lineTo(X(t1), Y(r.time)); x.stroke(); x.setLineDash([]);
+  x.fillStyle = '#2ed47a'; x.beginPath(); x.arc(X(t1), Y(r.time), 5, 0, 7); x.fill();
+  if(last && last.proj && pts.length){ const p = pts[pts.length - 1]; x.strokeStyle = '#ff9f1c'; x.setLineDash([2, 4]); x.lineWidth = 2; x.beginPath(); x.moveTo(X(p[0]), Y(p[1])); x.lineTo(X(t1), Y(last.proj)); x.stroke(); x.setLineDash([]); x.fillStyle = '#ff9f1c'; x.beginPath(); x.arc(X(t1), Y(last.proj), 4, 0, 7); x.fill(); }
+  x.strokeStyle = '#2f9bff'; x.lineWidth = 2.5; x.beginPath(); pts.forEach((p, i) => i ? x.lineTo(X(p[0]), Y(p[1])) : x.moveTo(X(p[0]), Y(p[1]))); x.stroke();
+  pts.forEach(p => { x.fillStyle = '#2f9bff'; x.beginPath(); x.arc(X(p[0]), Y(p[1]), 4, 0, 7); x.fill(); });
+}
+function checkinsCard(g, L){
+  const r = g.race, ks = Object.keys(r.checks || {}).map(Number).sort((a, b) => b - a);
+  return '<div class="card"><h2>Weekly check-ins</h2>' + (ks.length ? '<canvas id="ciChart" style="width:100%;height:170px;display:block"></canvas><div class="lg"><span><i style="background:var(--dim)"></i>On-track line</span><span><i style="background:#2f9bff"></i>Predicted time</span><span><i style="background:#ff9f1c"></i>Heading for</span></div>' +
+    ks.slice(0, 12).map(k => { const c = r.checks[k], st = STAT[c.status] || STAT.nodata; return '<div class="row" data-ci="' + k + '" style="cursor:pointer"><span>' + new Date(k).toLocaleDateString(undefined, { month:'short', day:'numeric' }) + ' · <b style="color:' + st[1] + '">' + st[0] + '</b></span><span class="muted">' + (c.pred ? fmtTime(c.pred) : '–') + ' ›</span></div>'; }).join('')
+    : '<p class="muted">Every Sunday (or the next time you open the app) you get a check-in: how the week went, whether you’re on track for race day, and the plan adjusted to match.</p>') +
+    '<button class="big alt" id="ciNow" style="margin-top:10px">Check in now</button></div>';
+}
+
 /* ================= the Progress screen ================= */
-let TAB = 'goals', BP = 'w', BM = 'm', FR = 30;
+let EDIT = false, TAB = 'goals', BP = 'w', BM = 'm', FR = 30;
 function mountScreen(){
   if($t('scr-progress')) return;
   const sec = document.createElement('section'); sec.className = 'screen'; sec.id = 'scr-progress';
@@ -456,14 +543,14 @@ function renderProgress(){
 function goalsTab(box, L, p){
   const g = goalOf(p.id);
   let h = '';
-  if(!g.race){
-    const pr2 = predict(L, 2000);
-    h += '<div class="card"><h2>Set a race goal</h2><p class="muted">Pick a distance, your target time and the date. You get a week-by-week plan built around your own pace.</p><div class="frm">' +
-      '<label>Distance</label><select id="gDist">' + [500, 1000, 1500, 2000, 5000, 6000].map(d => '<option value="' + d + '"' + (d === 2000 ? ' selected' : '') + '>' + d.toLocaleString() + ' m</option>').join('') + '</select>' +
-      '<label>Target time (m:ss)</label><input id="gTime" inputmode="decimal" placeholder="' + (pr2 ? fmtTime(Math.round(pr2.t - 10)) : '7:30') + '">' +
-      '<label>By (race or test day)</label><input id="gBy" type="date" value="' + new Date(Date.now() + 56 * DAY).toISOString().slice(0, 10) + '">' +
-      '<label>Sessions per week</label><select id="gDays">' + [3, 4, 5, 6, 7].map(d => '<option' + (d === 5 ? ' selected' : '') + '>' + d + '</option>').join('') + '</select></div>' +
-      '<button class="big" id="gSet" style="margin-top:14px">Make my plan</button></div>';
+  if(!g.race || EDIT){
+    const e = EDIT && g.race ? g.race : null, pr2 = predict(L, e ? e.dist : 2000);
+    h += '<div class="card"><h2>' + (e ? 'Edit your goal' : 'Set a race goal') + '</h2><p class="muted">' + (e ? 'Change anything — your progress and check-ins are kept, and the plan is rebuilt.' : 'Pick a distance, your target time and the date. You get a week-by-week plan built around your own pace.') + '</p><div class="frm">' +
+      '<label>Distance</label><select id="gDist">' + [500, 1000, 1500, 2000, 5000, 6000].map(d => '<option value="' + d + '"' + (d === (e ? e.dist : 2000) ? ' selected' : '') + '>' + d.toLocaleString() + ' m</option>').join('') + '</select>' +
+      '<label>Target time (m:ss)</label><input id="gTime" inputmode="decimal" value="' + (e ? fmtTime(e.time) : '') + '" placeholder="' + (pr2 ? fmtTime(Math.round(pr2.t - 10)) : '7:30') + '">' +
+      '<label>By (race or test day)</label><input id="gBy" type="date" value="' + (e ? e.by : new Date(Date.now() + 56 * DAY).toISOString().slice(0, 10)) + '">' +
+      '<label>Sessions per week</label><select id="gDays">' + [3, 4, 5, 6, 7].map(d => '<option' + (d === (e ? +e.days : 5) ? ' selected' : '') + '>' + d + '</option>').join('') + '</select></div>' +
+      '<button class="big" id="gSet" style="margin-top:14px">' + (e ? 'Save changes' : 'Make my plan') + '</button>' + (e ? '<button class="big alt" id="gCancel">Cancel</button>' : '') + '</div>';
   } else {
     const r = g.race, gs = SB() * r.time / r.dist, pr = predict(L, r.dist), plan = makePlan(g, L), w0 = thisWeek();
     const name = 'Sub-' + fmtTime(r.time) + ' ' + (r.dist % 1000 === 0 ? r.dist / 1000 + 'k' : r.dist + ' m');
@@ -482,17 +569,25 @@ function goalsTab(box, L, p){
         return '<div class="wkc' + (i === 0 ? ' now' : '') + '"><div class="h"><div><div class="s">Week ' + (i + 1) + ' · ' + new Date(w.start).toLocaleDateString(undefined, { month:'short', day:'numeric' }) + '</div><b style="font-size:18px">' + w.label + '</b><div class="s" style="margin-top:2px">' + w.ses.length + ' sessions · ' + kmTxt(w.m) + (i === 0 || w.start < w0 ? ' · ' + dn + ' done' : '') + '</div></div><span class="muted">' + (i === 0 ? '▾' : '▸') + '</span></div>' +
           '<div class="wkb" style="display:' + (i === 0 ? 'block' : 'none') + '">' + w.ses.map((s, k) => '<div class="ses' + (i === 0 && k < dn ? ' done' : '') + '"><span class="dt" style="background:' + TYPES[s.t].c + '"></span><div class="x"><b>' + esc(s.n) + '</b><small>' + esc(s.d) + '</small></div>' + (s.wk ? '<button data-w="' + i + '" data-k="' + k + '">Load</button>' : '') + '</div>').join('') + '</div></div>'; }).join('') +
       '<p class="muted" style="margin-top:10px;font-size:13px">“Load” sets up the workout and its rate and split targets, ready to press START. Every 4th week is lighter so your body can absorb the work; race week tapers.</p></div>';
-    h += '<button class="big red" id="gClear" style="margin-bottom:12px">Remove this goal</button>';
+    h += checkinsCard(g, L);
+    h += '<div style="display:flex;gap:8px;margin-bottom:12px"><button class="big alt" id="gEdit" style="margin:0;flex:1">✏️ Edit goal</button><button class="big red" id="gClear" style="margin:0;flex:1">Remove</button></div>';
     box.innerHTML = h + otherGoals(L, g);
     drawPlanBars($t('gBars'), plan);
     box.querySelectorAll('.wkc .h').forEach(hd => hd.onclick = () => { const b = hd.nextElementSibling; b.style.display = b.style.display === 'none' ? 'block' : 'none'; });
     box.querySelectorAll('.ses button').forEach(b => b.onclick = e => { e.stopPropagation(); const s = plan.weeks[+b.dataset.w].ses[+b.dataset.k]; Object.assign(S.wk, JSON.parse(JSON.stringify(s.wk)), { ts:s.wk.ts.map(v => Math.round(v * 10) / 10) }); saveSettings(); toast('Loaded ' + s.n + ' — press START'); go('live'); if(typeof renderLive === 'function') renderLive(); });
     $t('gClear').onclick = () => { if(!confirm('Remove the goal and plan?')) return; delete g.race; setGoal(p.id, g); renderProgress(); };
+    $t('gEdit').onclick = () => { EDIT = true; renderProgress(); $t('prBody').scrollTop = 0; };
+    if($t('ciChart')) drawTrack2($t('ciChart'), g, L);
+    box.querySelectorAll('[data-ci]').forEach(b => b.onclick = () => showCheckin(+b.dataset.ci));
+    if($t('ciNow')) $t('ciNow').onclick = () => checkin(true);
     wireOther(L, g, p); return;
   }
   box.innerHTML = h + otherGoals(L, g);
   $t('gSet').onclick = () => { const t = parseSplit($t('gTime').value), d = +$t('gDist').value, by = $t('gBy').value; if(!t || t < 60){ toast('Enter a target time like 7:00'); return; } if(!by || new Date(by + 'T12:00') < Date.now()){ toast('Pick a future date'); return; }
-    const pr = predict(L, d); g.race = { dist:d, time:t, by, days:+$t('gDays').value, startT:pr ? pr.t : null, set:Date.now() }; setGoal(p.id, g); toast('Plan ready'); renderProgress(); };
+    const pr = predict(L, d), old = EDIT && g.race;
+    g.race = old && old.dist === d ? Object.assign(old, { time:t, by, days:+$t('gDays').value }) : Object.assign({ dist:d, time:t, by, days:+$t('gDays').value, startT:pr ? pr.t : null, set:Date.now() }, old ? { checks:old.checks, adj:old.adj, focus:old.focus } : {});
+    setGoal(p.id, g); EDIT = false; toast(old ? 'Goal updated — plan rebuilt' : 'Plan ready'); renderProgress(); };
+  if($t('gCancel')) $t('gCancel').onclick = () => { EDIT = false; renderProgress(); };
   wireOther(L, g, p);
 }
 function otherGoals(L, g){
@@ -641,6 +736,8 @@ function detailExtra(id, sm, data, anchor){
   const cv = wrap.querySelector('.crv'); if(cv) drawCurve(cv, [curveStats(data.curve.a)]);
 }
 
-window.TRN = { crewSheet, pushCrews, crewApi, profiles, cur, owner, mine, kg, setKg, chip, brand, profileSheet, open, renderProgress, afterSave, detailExtra, improve, makePlan, predict, fitness, shape, achieve, challenges, curveStats, align, ensure, sessionLoad };
-brand(); checkJoinLink(); window.addEventListener('hashchange', checkJoinLink);
+window.TRN = { checkin, showCheckin, buildCheckin, crewSheet, pushCrews, crewApi, profiles, cur, owner, mine, kg, setKg, chip, brand, profileSheet, open, renderProgress, afterSave, detailExtra, improve, makePlan, predict, fitness, shape, achieve, challenges, curveStats, align, ensure, sessionLoad };
+brand(); checkJoinLink();
+const autoCheck = () => { if(document.visibilityState !== 'visible' || location.hash.indexOf('#coach=') === 0) return; setTimeout(() => { try{ if(!document.querySelector('#sheet.on, .sheet.on')) checkin(false); }catch(e){} }, 1500); };
+autoCheck(); document.addEventListener('visibilitychange', autoCheck); window.addEventListener('hashchange', checkJoinLink);
 })();
