@@ -556,7 +556,7 @@ function emailCard(p){
   return '<div class="card"><h2>Weekly email report</h2>' + (R.email
     ? '<p>Every <b>Sunday at 6 PM</b> this check-in goes to <b>' + esc(R.email) + '</b>: progress, on-track chart, plan changes and next week’s sessions.</p><div style="display:flex;gap:8px;margin-top:10px"><button class="big" id="emTest" style="margin:0;flex:1">Send one now</button><button class="big alt" id="emOff" style="margin:0;flex:1">Turn off</button></div>' +
       '<p class="muted" style="margin-top:8px;font-size:13px">It uses the numbers from the last time the app was opened, so open it once on Sunday for the freshest report. Each email has a one-tap unsubscribe link.</p>'
-    : '<p class="muted">Get this week’s check-in by email every Sunday at 6 PM.</p><div class="frm"><label>Email address</label><div style="display:flex;gap:8px"><input id="emAddr" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com"><button class="big" id="emOn" style="width:96px;margin:0;height:46px">Turn on</button></div></div>') + '</div>';
+    : '<p class="muted">Get this week’s check-in by email every Sunday at 6 PM.</p><div class="frm"><label>Email address</label><input id="emAddr" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com"></div><button class="big" id="emOn" style="margin-top:12px">✉️ Email me every Sunday</button>') + '</div>';
 }
 function wireEmail(p){
   const save = async (email) => { const P = profiles().find(x => x.id === p.id); P.report = P.report && P.report.rid ? P.report : { rid:hexr(8), secret:hexr(16) };
@@ -564,7 +564,7 @@ function wireEmail(p){
     if(!r.ok){ const j = await r.json().catch(() => ({})); throw new Error(j.error || 'net'); }
     P.report.email = email || null; P.report.pushed = Date.now(); saveProfile(P); };
   if($t('emOn')) $t('emOn').onclick = async () => { const e = $t('emAddr').value.trim(); if(!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e)){ toast('Check the email address'); return; }
-    try{ await save(e); toast('Weekly report on'); renderProgress(); }catch(err){ toast(err.message === 'bad_email' ? 'Check the email address' : 'Couldn’t save — check your connection'); } };
+    try{ await save(e); toast('Done — your first report comes Sunday at 6 PM'); renderProgress(); }catch(err){ toast(err.message === 'bad_email' ? 'Check the email address' : 'Couldn’t save — check your connection'); } };
   if($t('emOff')) $t('emOff').onclick = async () => { try{ await save(null); }catch(e){} toast('Weekly report off'); renderProgress(); };
   if($t('emTest')) $t('emTest').onclick = async () => { const b = $t('emTest'); b.disabled = true; b.textContent = 'Sending…';
     try{ await pushReport(p.id, true); const P = profiles().find(x => x.id === p.id); const r = await fetch('/api/report/test', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ rid:P.report.rid, secret:P.report.secret }) });
