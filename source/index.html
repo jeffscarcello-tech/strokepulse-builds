@@ -46,6 +46,26 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
 .f:not(.wide) .val{font-size:min(12vw,7.5vh)}
 .fields.l3 .f.wide .val{font-size:min(25vw,19vh)}
 .fields.l4 .f.wide .val{font-size:min(24vw,15vh)}.fields.l4 .f:not(.wide) .val{font-size:min(13vw,10vh)}
+/* landscape (phone on its side in the boat): numbers fill the screen, buttons in a column on the right */
+@media (orientation:landscape) and (max-height:600px){
+  #scr-live.on{display:grid;grid-template-columns:1fr 150px;grid-template-rows:auto auto 1fr auto}
+  #scr-live .status{grid-column:1/-1;padding:4px 10px}
+  #scr-live .banner{grid-column:1/-1;padding:4px;font-size:16px}
+  #scr-live .fields{grid-column:1;grid-row:3/5;grid-template-rows:none!important}
+  #scr-live .fields.l6{grid-template-columns:repeat(4,1fr);grid-template-rows:1.3fr 1fr!important}
+  #scr-live .fields.l6 .f.wide{grid-column:span 2}
+  #scr-live .fields.l4{grid-template-columns:repeat(2,1fr);grid-template-rows:repeat(2,1fr)!important}
+  #scr-live .fields.l4 .f.wide{grid-column:auto}
+  #scr-live .fields.l3{grid-template-columns:repeat(2,1fr);grid-template-rows:1.25fr 1fr!important}
+  #scr-live .fields.l3 .f{grid-column:auto}
+  #scr-live .fields.l3 .f:first-child{grid-column:span 2}
+  #scr-live .coxbar.on{grid-column:2;grid-row:3;flex-direction:column;padding:8px 8px 0}
+  #scr-live .coxbar button{flex:1;min-height:40px}
+  #scr-live .controls{grid-column:2;grid-row:4;flex-direction:column;padding:8px}
+  #scr-live .controls button{flex:0 0 auto;height:62px;font-size:20px}
+  #scr-live #coxBar:not(.on) + .controls button{flex:1 1 0;height:auto}
+  #scr-live #coxBar:not(.on) + .controls{grid-row:3/5;justify-content:flex-end}
+}
 .banner{display:none;background:var(--acc);color:#fff;text-align:center;font-weight:800;padding:8px;font-size:20px}
 .banner.rest{background:var(--warn);color:#000}.banner.done{background:var(--good);color:#000}
 .controls{display:flex;gap:8px;padding:10px}
@@ -558,6 +578,14 @@ function pickField(i){
   openSheet('<h2 style="margin-bottom:8px">Show in this box</h2>'+METRIC_ORDER.map(k=>'<button class="opt'+(S.fields[i]===k?' on':'')+'" data-k="'+k+'">'+lab(METRICS[k])+'</button>').join(''),
     el=>{ el.querySelectorAll('.opt').forEach(b=>b.onclick=()=>{ S.fields[i]=b.dataset.k; saveSettings(); closeSheet(); renderLive(); }); });
 }
+const LANDSCAPE = window.matchMedia('(orientation:landscape) and (max-height:600px)');
+function fitVal(box, el, txt){
+  if(!LANDSCAPE.matches){ if(el.style.fontSize) el.style.fontSize=''; return; }
+  const key=box.clientWidth+'x'+box.clientHeight+':'+txt.length; if(el.dataset.fit===key) return; el.dataset.fit=key;
+  const size=Math.max(18, Math.min(box.clientHeight*0.62, (box.clientWidth*0.9)/(Math.max(3,txt.length)*0.58)));
+  el.style.fontSize=Math.floor(size)+'px';
+}
+LANDSCAPE.addEventListener && LANDSCAPE.addEventListener('change', ()=>{ document.querySelectorAll('#fields .val').forEach(v=>{ v.dataset.fit=''; }); renderLive(); });
 const HOLD={avgSplit:5000, avgRate:5000, split:1000, speed:1000, dps:1000, check:2000};
 const fieldCache=[];
 function renderLive(){
@@ -567,7 +595,7 @@ function renderLive(){
     // steady numbers: averages change every 5 s, live split/speed once a second (time and distance stay live)
     const hold=HOLD[key]||0, c=fieldCache[i];
     let v; if(hold && c && c.key===key && now-c.t<hold && !!run===c.run) v=c.v; else { v=m.val(); fieldCache[i]={key,v,t:now,run:!!run}; }
-    b.children[0].textContent=lab(m); b.children[1].textContent=m.unit(); b.children[2].textContent=v;
+    b.children[0].textContent=lab(m); b.children[1].textContent=m.unit(); b.children[2].textContent=v; fitVal(b, b.children[2], v);
     const [st,tag]=targetState(S.fields[i]); b.classList.toggle('ok',st==='ok'); b.classList.toggle('off',st==='off'); b.children[3].textContent=tag; }
   // status
   const age=(Date.now()-gps.lastFix)/1000;

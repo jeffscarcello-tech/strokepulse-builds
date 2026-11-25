@@ -28,8 +28,12 @@ css.textContent = `
 .chip{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:800;color:#000;white-space:nowrap}
 .calls{}
 .cxpanel{position:sticky;top:-12px;z-index:6;margin:-12px -12px 12px;padding:12px 12px 10px;background:var(--bg);border-bottom:1px solid var(--line)}
-.cxpanel canvas{width:100%;height:170px;display:block}
-.cxpanel .seg{margin-bottom:8px}
+.cxpanel canvas{width:100%;height:190px;display:block}
+.mchips{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 2px}
+.mchips button{padding:6px 10px;border-radius:999px;border:2px solid var(--mc);font-size:13px;font-weight:700;color:var(--dim);background:transparent}
+.mchips button.on{background:var(--mc);color:#000}
+.mchips button b{font-variant-numeric:tabular-nums;margin-left:3px}
+@media (orientation:landscape) and (max-height:600px){ .cxpanel{position:static} .cxpanel canvas{height:140px} }
 .call{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--line);cursor:pointer}
 .call.sel{background:rgba(47,155,255,.12)}
 .call .tm{font-variant-numeric:tabular-nums;color:var(--dim);font-size:13px;min-width:52px;padding-top:2px;line-height:1.35}
@@ -376,8 +380,16 @@ async function syncAudio(){
 function deleteLocal(id){ const data = LS.get('sp_s_' + id, null); const pend = LS.get('sp_audio_pend', []).filter(p => p.sid !== id); LS.set('sp_audio_pend', pend); return data && data.cox ? idbDelRec(data.cox.rec).catch(() => {}) : null; }
 
 /* ================= analysis (used by the cox's History and the coach view) ================= */
-function canvasFast(c){ const r = window.devicePixelRatio || 1, w = c.clientWidth, h = +(c.dataset.h || (c.dataset.h = c.getAttribute('height')));
-  if(c.width !== Math.round(w * r) || c.height !== Math.round(h * r)){ c.width = Math.round(w * r); c.height = Math.round(h * r); c.style.height = h + 'px'; }
+const MET = [
+  { k:'split', lab:'Split', c:'#2f9bff', flip:true, get:z => z[4] > 0.5 ? (+S.splitBase) / z[4] : null, fmt:v => fmtTime(v, true) },
+  { k:'speed', lab:'Speed', c:'#2ed47a', get:z => z[4] > 0.2 ? z[4] : null, fmt:v => fmtSpeed(v) + speedUnit() },
+  { k:'rate',  lab:'Rate',  c:'#ffb020', get:z => z[5] > 0 ? z[5] : null, fmt:v => v.toFixed(1) },
+  { k:'dps',   lab:'Dist/stroke', c:'#a78bfa', get:z => z[5] > 8 && z[4] > 0.5 ? z[4] / (z[5] / 60) : null, fmt:v => (imp() ? (v * 3.28084).toFixed(1) + 'ft' : v.toFixed(1) + 'm') },
+  { k:'check', lab:'Check', c:'#ff6b6b', get:z => z[8] > 0 ? z[8] : null, fmt:v => v.toFixed(1) }
+];
+let CHM = LS.get('sp_chartm', ['split', 'rate']);
+function canvasFast(c){ const r = window.devicePixelRatio || 1, w = c.clientWidth, h = c.clientHeight || +(c.dataset.h || (c.dataset.h = c.getAttribute('height')));
+  if(c.width !== Math.round(w * r) || c.height !== Math.round(h * r)){ c.width = Math.round(w * r); c.height = Math.round(h * r); }
   const x = c.getContext('2d'); x.setTransform(r, 0, 0, r, 0, 0); x.clearRect(0, 0, w, h); return [x, w, h]; }
 function sampleAt(smp, t){ let lo = 0, hi = smp.length - 1; if(hi < 0) return null; while(lo < hi){ const m = (lo + hi) >> 1; if(smp[m][0] < t) lo = m + 1; else hi = m; } return smp[lo]; }
 function windowAvg(smp, a, b){ let v = 0, r = 0, n = 0, rest = 0; for(const s of smp){ if(s[0] < a) continue; if(s[0] >= b) break; v += s[4]; r += s[5]; n++; if(s[7]) rest++; } return n ? { v:v / n, r:r / n, n, rest } : null; }
@@ -432,13 +444,13 @@ async function renderAnalysis(box, opts){
     const A = analyse(data, chunks), smp = data.samples || [];
     const pct = A.T ? Math.round(A.talk / A.T * 100) : 0, failed = chunks.filter(c => c.status === 'error' || c.status === 'no_ai').length;
     const hasTrack = smp.some(s => s[1] != null);
-    const panelHtml = '<div class="seg" id="cxaView"><button data-v="chart">Split &amp; rate</button><button data-v="course">Distance</button></div>' +
-      '<canvas id="cxaChart" height="170"></canvas><canvas id="cxaTrack" height="170" style="display:none"></canvas>' +
+    const panelHtml = '<canvas id="cxaChart" height="190"></canvas>' +
+      '<div class="mchips" id="cxaM">' + MET.filter(m => m.k !== 'check' || smp.some(x => x[8] > 0)).map(m => '<button data-m="' + m.k + '" style="--mc:' + m.c + '">' + m.lab + '<b></b></button>').join('') + '</div>' +
       '<div class="player"><button id="cxaPlay">▶</button><input type="range" id="cxaPos" min="0" max="' + Math.max(1, Math.ceil(A.T)) + '" step="1" value="0"><span class="pt" id="cxaPT">0:00</span></div>';
     let h = '<div class="card"><h2>Cox Calls</h2>' + (chunks.some(c => c.status === 'new' || c.status === 'local') ? '<p class="muted" id="cxaStat">' + (chunks.some(c => c.status === 'local') ? 'Uploading the recording — transcript follows.' : 'Still transcribing — more calls will appear.') + '</p>' : '') +
       (failed ? '<p class="muted">' + failed + ' minute(s) couldn’t be transcribed, but the audio is still here to play.</p>' : '') +
       '<div class="grid3">' + stat('Calls', A.calls.length) + stat('Talk time', pct + '%') + stat('Longest quiet', fmtTime(A.longest)) + '</div>' +
-      '<p class="muted" style="margin-top:8px">Each call is timed at its keyword (in blue). The panel above stays put while you scroll. Chart: <span style="color:var(--acc)">■</span> split (higher = faster) <span style="color:var(--warn)">■</span> rate, ticks = calls. Tap the chart or any call to listen from there.</p></div>';
+      '<p class="muted" style="margin-top:8px">Each call is timed at its keyword (in blue). The chart runs along the distance rowed; ticks along the top are calls. Tap the coloured buttons under it to choose what it shows (split is drawn so higher = faster). Tap the chart or any call to listen from there.</p></div>';
     if(A.cats.length) h += '<div class="card"><h2>What each type of call did</h2><table><tr><th>Type</th><th>Calls</th><th>Split after</th><th>Rate after</th></tr>' +
       A.cats.map(c => '<tr><td><span class="chip" style="background:' + c.c + '">' + c.k + '</span></td><td>' + c.n + '</td><td>' + (c.m ? sgn(c.ds / c.m, 1) + 's' : '—') + '</td><td>' + (c.m ? sgn(c.dr / c.m, 1) : '—') + '</td></tr>').join('') +
       '</table><p class="muted" style="margin-top:8px">Average change in the 20 s after a call vs the 20 s before. Negative split = boat got faster. One session is a hint, not proof — look for patterns over several.</p></div>';
@@ -466,55 +478,62 @@ async function renderAnalysis(box, opts){
   }
   P.audio.addEventListener('timeupdate', () => { if(P.cur){ P.t = P.cur.t0 + P.audio.currentTime; ui(); } });
   P.audio.addEventListener('ended', () => { if(!P.cur) return; const next = chunks.find(c => c.idx === P.cur.idx + 1); if(next && P.playing) playAt(next.t0); else { P.playing = false; ui(true); if(pendingDraw) draw(); } });
-  let A0 = null, smp0 = [], view = 'chart';
+  let A0 = null, smp0 = [], series = {};
   let uiT = 0;
   function ui(force){
     const b = $c('cxaPlay'); if(!b) { P.audio.pause(); return; }
     const nowT = performance.now(); if(!force && P.playing && nowT - uiT < 250) return; uiT = nowT;
     b.textContent = P.playing ? '❚❚' : '▶'; const pos = $c('cxaPos'); if(document.activeElement !== pos) pos.value = Math.round(P.t); $c('cxaPT').textContent = fmtTime(Math.max(0, P.t));
-    drawTimeline(); drawTrack();
+    drawChart();
     document.querySelectorAll('#cxaList .call').forEach(el => { const t = +el.dataset.t, on = P.t >= t - 0.2 && P.t < t + 3; if(el.classList.contains('sel') !== on) el.classList.toggle('sel', on); });
   }
-  function drawTimeline(){
-    const c = $c('cxaChart'); if(!c || !A0 || view !== 'chart') return; const [x, w, h] = canvasFast(c); const T = A0.T || 1;
-    const vs = smp0.map(s => s[4]).filter(v => v > 0.3), vMax = Math.max(1, ...vs), vMin = Math.max((+S.splitBase) / 300, Math.min(vMax * 0.6, ...vs)), rMax = Math.max(40, ...smp0.map(s => s[5]));
-    x.fillStyle = cssVar('--line'); smp0.forEach(s => { if(s[7]) x.fillRect(s[0] / T * w, 0, Math.max(1, w / T), h); });
-    const line = (col, fy) => { x.strokeStyle = col; x.lineWidth = 2; x.beginPath(); let st = false; smp0.forEach(s => { const y = fy(s); if(y == null){ st = false; return; } const px = s[0] / T * w; if(!st){ x.moveTo(px, y); st = true; } else x.lineTo(px, y); }); x.stroke(); };
-    line(cssVar('--acc'), s => s[4] > 0.3 ? h - 8 - Math.max(0, (s[4] - vMin) / (vMax - vMin || 1)) * (h - 30) : null);
-    line(cssVar('--warn'), s => h - 8 - s[5] / rMax * (h - 30));
-    for(const cl of A0.calls){ x.fillStyle = cl.cat.c; x.fillRect(cl.t / T * w - 1, 0, 3, 16); }
-    x.strokeStyle = cssVar('--fg'); x.lineWidth = 1; x.beginPath(); x.moveTo(P.t / T * w, 0); x.lineTo(P.t / T * w, h); x.stroke();
-  }
   function niceStep(total){ for(const st of [50, 100, 250, 500, 1000, 2000, 5000]) if(total / st <= 8) return st; return 10000; }
-  function drawTrack(){   // "Distance": a straight line from start to finish, with each call marked where its keyword was said
-    const c = $c('cxaTrack'); if(!c || view !== 'course' || !A0) return;
-    const [x, w, h] = canvasFast(c); const total = Math.max(1, smp0.length ? smp0[smp0.length - 1][3] : 1);
-    const L = 14, R = w - 14, Y = 100, X = d => L + (R - L) * Math.max(0, Math.min(1, d / total));
-    x.fillStyle = cssVar('--line'); let restA = null;   // shade rests
-    smp0.forEach(s => { if(s[7] && restA == null) restA = s[3]; if(!s[7] && restA != null){ x.fillRect(X(restA), Y - 70, Math.max(2, X(s[3]) - X(restA)), 80); restA = null; } });
-    x.strokeStyle = cssVar('--dim'); x.lineWidth = 4; x.lineCap = 'round'; x.beginPath(); x.moveTo(L, Y); x.lineTo(R, Y); x.stroke();
-    const step = niceStep(total); x.fillStyle = cssVar('--dim'); x.font = '12px -apple-system,sans-serif'; x.textAlign = 'center'; x.lineWidth = 1;
-    for(let d = 0; d <= total + 0.01; d += step){ const px = X(d); x.beginPath(); x.moveTo(px, Y + 6); x.lineTo(px, Y + 14); x.strokeStyle = cssVar('--dim'); x.stroke(); x.fillText(fmtDist(d) + (d === 0 ? '' : distUnit(d)), Math.min(R - 12, Math.max(L + 8, px)), Y + 30); }
-    // calls: coloured flags above the line, staggered so close calls don't overlap
-    let lastX = -99, lane = 0;
-    for(const cl of A0.calls){ const px = X(cl.d || 0); lane = px - lastX < 10 ? (lane + 1) % 4 : 0; lastX = px;
-      x.strokeStyle = cl.cat.c; x.lineWidth = 2; x.beginPath(); x.moveTo(px, Y - 4); x.lineTo(px, Y - 22 - lane * 12); x.stroke();
-      x.fillStyle = cl.cat.c; x.beginPath(); x.arc(px, Y - 24 - lane * 12, 4, 0, 7); x.fill(); }
-    const cur = distAt(smp0, P.t); const cx = X(cur);   // where the boat is in the recording
-    x.fillStyle = cssVar('--fg'); x.beginPath(); x.arc(cx, Y, 8, 0, 7); x.fill();
-    x.textAlign = cx > w - 60 ? 'right' : 'left'; x.font = 'bold 13px -apple-system,sans-serif'; x.fillText(fmtDist(cur) + distUnit(cur), cx + (cx > w - 60 ? -10 : 10), Y + 52 > h ? h - 4 : Y + 52);
+  /* smoothed values for each measure, worked out once per page */
+  function buildSeries(){
+    series = {};
+    for(const m of MET){
+      const raw = smp0.map(x => { const v = m.get(x); return v == null || !isFinite(v) ? null : v; });
+      const sm = raw.map((v, i) => { if(v == null) return null; let a = 0, n = 0; for(let j = Math.max(0, i - 2); j <= Math.min(raw.length - 1, i + 2); j++) if(raw[j] != null){ a += raw[j]; n++; } return a / n; });
+      const ok = sm.filter(v => v != null).sort((p, q) => p - q);
+      if(!ok.length){ series[m.k] = null; continue; }
+      let lo = ok[Math.floor(ok.length * 0.03)], hi = ok[Math.floor(ok.length * 0.97)]; if(hi - lo < 1e-6){ lo -= 1; hi += 1; } const pad = (hi - lo) * 0.1;
+      series[m.k] = { v:sm, lo:lo - pad, hi:hi + pad };
+    }
   }
-  function timeAtDist(d){ for(const s of smp0) if(s[3] >= d) return s[0]; return smp0.length ? smp0[smp0.length - 1][0] : 0; }
+  function drawChart(){
+    const c = $c('cxaChart'); if(!c || !A0) return; const [x, w, h] = canvasFast(c);
+    const total = Math.max(1, smp0.length ? smp0[smp0.length - 1][3] : 1);
+    const L = 8, R = w - 8, TOP = 24, BOT = h - 22, X = d => L + (R - L) * Math.max(0, Math.min(1, d / total));
+    // rests shaded
+    x.fillStyle = cssVar('--line'); let ra = null; smp0.forEach(z => { if(z[7] && ra == null) ra = z[3]; if(!z[7] && ra != null){ x.fillRect(X(ra), TOP, Math.max(2, X(z[3]) - X(ra)), BOT - TOP); ra = null; } });
+    // distance scale
+    const step = niceStep(total); x.font = '11px -apple-system,sans-serif'; x.textAlign = 'center'; x.lineWidth = 1;
+    for(let d = 0; d <= total + 0.01; d += step){ const px = X(d); x.strokeStyle = cssVar('--line'); x.beginPath(); x.moveTo(px, TOP); x.lineTo(px, BOT); x.stroke(); x.fillStyle = cssVar('--dim'); x.fillText(fmtDist(d) + (d === 0 ? '' : distUnit(d)), Math.min(R - 14, Math.max(L + 8, px)), h - 6); }
+    // chosen lines
+    for(const m of MET){ if(!CHM.includes(m.k)) continue; const sr = series[m.k]; if(!sr) continue;
+      const Y = v => { let f = (v - sr.lo) / (sr.hi - sr.lo); if(m.flip) f = 1 - f; return BOT - Math.max(0, Math.min(1, f)) * (BOT - TOP); };
+      x.strokeStyle = m.c; x.lineWidth = 2.2; x.lineJoin = 'round'; x.beginPath(); let on = false;
+      smp0.forEach((z, i) => { const v = sr.v[i]; if(v == null){ on = false; return; } const px = X(z[3]), py = Y(v); if(!on){ x.moveTo(px, py); on = true; } else x.lineTo(px, py); }); x.stroke(); }
+    // calls along the top
+    let lastX = -99, lane = 0;
+    for(const cl of A0.calls){ const px = X(cl.d || 0); lane = px - lastX < 7 ? (lane + 1) % 2 : 0; lastX = px; x.fillStyle = cl.cat.c; x.fillRect(px - 1.5, 2 + lane * 10, 3, 9); }
+    // where the recording is
+    const cur = distAt(smp0, P.t), cx = X(cur); x.strokeStyle = cssVar('--fg'); x.lineWidth = 1.5; x.beginPath(); x.moveTo(cx, TOP - 2); x.lineTo(cx, BOT); x.stroke();
+    // values at that point go on the buttons
+    const z = sampleAt(smp0, P.t), i = z ? smp0.indexOf(z) : -1;
+    document.querySelectorAll('#cxaM button').forEach(btn => { const m = MET.find(q => q.k === btn.dataset.m), sr = series[m.k], v = sr && i >= 0 ? sr.v[i] : null; const t = v == null ? '' : ' ' + m.fmt(v); const bEl = btn.querySelector('b'); if(bEl.textContent !== t) bEl.textContent = t; });
+  }
+  function timeAtDist(d){ for(const z of smp0) if(z[3] >= d) return z[0]; return smp0.length ? smp0[smp0.length - 1][0] : 0; }
   function wire(A, smp){
-    A0 = A; smp0 = smp;
-    const setView = v => { view = v; $c('cxaChart').style.display = v === 'chart' ? 'block' : 'none'; $c('cxaTrack').style.display = v === 'course' ? 'block' : 'none'; if($c('cxaView')) segBind($c('cxaView'), v, setView); ui(true); };
-    setView(view);
+    A0 = A; smp0 = smp; buildSeries();
+    const paintChips = () => document.querySelectorAll('#cxaM button').forEach(btn => btn.classList.toggle('on', CHM.includes(btn.dataset.m)));
+    document.querySelectorAll('#cxaM button').forEach(btn => btn.onclick = () => { const k = btn.dataset.m; CHM = CHM.includes(k) ? CHM.filter(q => q !== k) : CHM.concat(k); LS.set('sp_chartm', CHM); paintChips(); ui(true); });
+    paintChips();
     $c('cxaPlay').onclick = () => { if(P.playing){ P.audio.pause(); P.playing = false; ui(true); if(pendingDraw) draw(); } else playAt(P.t); };
     $c('cxaPos').onchange = () => { P.t = +$c('cxaPos').value; if(P.playing) playAt(P.t); else ui(true); };
-    $c('cxaChart').onclick = e => { const r = e.target.getBoundingClientRect(); P.t = (e.clientX - r.left) / r.width * (A.T || 1); playAt(P.t); };
-    $c('cxaTrack').onclick = e => { const r = e.target.getBoundingClientRect(), total = smp.length ? smp[smp.length - 1][3] : 0; const f = Math.max(0, Math.min(1, (e.clientX - r.left - 14) / (r.width - 28))); P.t = timeAtDist(f * total); playAt(P.t); };
+    $c('cxaChart').onclick = e => { const r = e.target.getBoundingClientRect(), total = smp.length ? smp[smp.length - 1][3] : 0; const f = Math.max(0, Math.min(1, (e.clientX - r.left - 8) / (r.width - 16))); P.t = timeAtDist(f * total); playAt(P.t); };
     box.querySelectorAll('.call').forEach(el => el.onclick = () => { P.t = Math.max(0, +el.dataset.t - 0.3); playAt(P.t); });
-    ui();
+    ui(true);
   }
   load();
 }
