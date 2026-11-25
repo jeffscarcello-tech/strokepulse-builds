@@ -64,7 +64,9 @@ css.textContent = `
 .lane.lead .gp{background:rgba(46,212,122,.15);color:#2ed47a;border-color:rgba(46,212,122,.4)}
 .lane .water{position:relative;height:38px;margin-top:10px;border-radius:12px;overflow:hidden;
   background:radial-gradient(ellipse 18px 3px at 50% 50%,rgba(255,255,255,.07),transparent) 0 0/36px 12px,linear-gradient(180deg,#123a5e,#0b2540 55%,#0d2f4d)}
-.lane .water::before{content:"";position:absolute;left:0;right:0;top:4px;height:3px;background:radial-gradient(circle,#ffb020 1.3px,transparent 1.6px) 0 0/12px 3px;opacity:.8}
+.lane .water::before,.lane .marks::before{content:"";position:absolute;left:14px;right:14px;height:6px;background:radial-gradient(circle,rgba(255,255,255,.9) 1.8px,transparent 2.3px) 0 0/30px 6px;opacity:.55}
+.lane .water::before{top:2px}
+.lane .marks::before{bottom:2px}
 .lane .water::after{content:"";position:absolute;right:0;top:0;bottom:0;width:10px;background:conic-gradient(#fff 25%,#1a1a1a 0 50%,#fff 0 75%,#1a1a1a 0) 0 0/10px 10px;opacity:.9}
 .lane .marks{position:absolute;inset:0;background:linear-gradient(90deg,transparent calc(25% - 1px),rgba(255,255,255,.10) 0 calc(25% + 1px),transparent 0 calc(50% - 1px),rgba(255,255,255,.10) 0 calc(50% + 1px),transparent 0 calc(75% - 1px),rgba(255,255,255,.10) 0 calc(75% + 1px),transparent 0)}
 body.glare .lane .water{background:linear-gradient(180deg,#d6ecff,#b9dbfb)}
