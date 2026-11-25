@@ -1,34 +1,54 @@
 # StrokePulse — status
 
-GPS speed coach web app for iPhone (rowing / paddling), like the NK SpeedCoach GPS.
+GPS speed coach for iPhone (rowing and paddling), like the NK SpeedCoach GPS, plus Cox mode, training plans and crews.
 
-## Current build
-- Test: **sp-20261125p** (v3.16) — Report a problem (Settings → Help, above the version line): in-app box (What happened? / What did you expect?) → Open email to support@shotpulse.app, subject "StrokePulse problem (<build>)", body with 1) 2) markers and one • line per detail, CRLF. Test: source/tests/browser/report_problem.py. Previous: sp-20261125o (v3.15) — Crew screen (source/lineup.js): saved lineups (old Cox roster migrated), seat → crew member links so boat sessions are credited to every linked rower (/api/crew/credit, uncredit on delete), "Rowed with your crew" in History, fastest lineup, seat racing, attendance, boats & rigging, share lineup with crew (/api/crew/lineup, crews.lineup column). Loader **l8** (SHA 8cac9229…). Previous: sp-20261125n (v3.14) — branding: new logo (crossed blue + orange rowing blades over a pulse line, source/icon.svg = home-screen icon), "StrokePulse" wordmark in Inter Black (same font as ShotPulse; vendor/inter-900.woff, served /inter-900.woff) with Stroke blue #4aa8ff + Pulse orange #ff9f1c; brand bar on every screen except the rowing screen, big brand header on Menu. Previous: sp-20261125m (v3.13) — board measure buttons: shorter labels (Days rowed, Best 500, Steadiest, Improved), wrap instead of cut off. Previous: sp-20261125l (v3.12) — email card: full-width address box and "Email me every Sunday" button. Previous: sp-20261125k (v3.11) — weekly email report: Goals → "Weekly email report" card (per rower; rid+secret on phone). Loader **l7** (SHA 830fbbf3…): /api/report/save|test, /u?t= unsubscribe (one-click), scheduled() sends Sunday 6 PM in each rower’s own time zone, once per week (last_wk), log in appmeta replog. Crons `0 * * * SUN`, `0 * * * MON`. Resend send-only key "strokepulse-test-reports" (shotpulse.app) in secret RESEND_API_KEY; from StrokePulse <strokepulse@shotpulse.app>. Previous: sp-20261125j (v3.10) — Progress tabs and History buttons get a solid bar with border and shadow. Previous: sp-20261125i (v3.9) — goals: Edit goal (keeps check-ins), weekly check-in pop-up (Sunday or next open; stored in goal.race.checks; on-track line chart; plan auto-adjusts via race.adj volume and race.focus speed/endurance), check-ins card in Goals. Email report not built (needs mail setup). Previous: sp-20261125h (v3.8) — History: rower button moved to top-right, Compare / Cox report as compact even buttons. Previous: sp-20261125g (v3.7) — buoys now white, spaced out, lining both sides of each lane. Previous: sp-20261125f (v3.6) — restyled race lanes (lane cards with rower colour, avatar ring, sessions count, gap pill, shell with oars centred in deeper water, buoy line, distance marks). Previous: sp-20261125e (v3.5) — own leaderboard design: race lanes (boat per rower, checkered finish, gap to leader), measures in a 3-column grid (fixes 'Hours' overflow). Previous: sp-20261125d (v3.4) — crews online (invite code / #join=CODE link; tables crews, crew_members, crew_sessions; summaries only), Google map (Map/Satellite/Hybrid, tap to move pin, weather follows pin, Open in Google Maps) with Esri/OSM fallback, rower button top-right of Menu. Loader **l6** (SHA fee83182…) adds /api/crew/*, /api/config, secret GMAPS_KEY (Google Maps JS key, website-restricted, lives only in Cloudflare). Previous: sp-20261125c (v3.3) — source/train.js: rowers (profiles on one phone, sessions tagged `who`), Progress screen (Goals + week-by-week plan with Load buttons, Fitness & fatigue, weekly distance, strength shape radar, stroke curve from motion sensor saved as data.curve), trophies (16 × tiers), weekly challenges, board + team goals (local rowers), where-to-improve tips on each session, clickable Cox report (calls stored in sp_coxrep v2), menu tiles + Rower card, visual refresh. Previous: sp-20261125b (v3.2) — session analytics (source/analytics.js, Leaflet 1.9.4 served as /leaflet.js+.css, OSM tiles, Open-Meteo weather): speed-coloured map with call markers + replay dot, calories (weight in Settings, live Calories field), best 500/1k/2k + PB badges, segments, piece comparison with 2nd-half fade, consistency score, split vs rate, same workout over time, compare 2–4 sessions (stats, chart, pieces, segments, routes), Cox report over the season, notes, weather + wind. Previous: sp-20261125a (v3.1) — one replay chart along distance with selectable measures (split, speed, rate, dist/stroke, check); landscape live screen (big numbers, side buttons); analysis panel not pinned in landscape. Previous: sp-20261124p (v3.0) — calls split at pauses (word timings, loader l5), timed at keyword with distance; Distance line view in replay; distance alerts (every N m, target, beeps or voice). Previous: sp-20261124o (v2.9) — fixed-size replay panel pinned at top (chart/course toggle + player); beeper start mode (tap or session), always stops with session. Previous: sp-20261124n (v2.8) — beeper stops with the session; analysis waits for pause before showing new transcript, keeps scroll. Previous: sp-20261124m (v2.7) — steady live averages (5 s, whole seconds), split 1/s; analysis no longer rebuilds or resizes charts during playback. Previous: sp-20261124l (v2.6) — pop-up messages at top, tap-through, 2 s. Previous: sp-20261124k (v2.5) — MIC turns fully off when no session; mute during session silences speakers + coach. Previous: sp-20261124j (v2.4) — crew roster always in Menu and saved with every session. Previous: sp-20261124i (v2.3) — reliable Update now (uses newest waiting version, hard refresh fallback), COX switch on main screen. Previous: sp-20261124h (v2.2) — instant Cox mode switch, tidy settings layout. Previous: sp-20261124g (v2.1) — solid status bar (no top fade), no page bounce. Previous: sp-20261124f (v2.0) — Cox mode: mic→speakers, recording + transcripts + call analysis, coach link (private), live listen/talk-back/messages, race-plan prompts, rate beeper, check factor, crew list
-- Live: not set up yet (test site first)
+## Installed (checked Nov 25 2026, 11:20 AM Eastern)
+| Site | Address | App build | Loader | How to check |
+|---|---|---|---|---|
+| Test | https://strokepulsetest.jeffscarcello.workers.dev | **sp-20261125p (v3.16)** | **l8** (SHA-256 8cac9229…) | D1 `strokepulsetest`: `SELECT k, v FROM appmeta WHERE k IN ('ghbuild','ghlast')`; loader via Cloudflare content hash; `/api/health` on the site |
+| Live | not set up yet | — | — | — |
+
+## Newest files
+- GitHub `jeffscarcello-tech/strokepulse-builds`: `test/app.json` + `test/build.txt` (installed build), `source/` (all source), `source/workers/loader.js` (l8), `source/workers/updater.js`, `source/tests/` (see tests/README.md).
+- App source: `index.html`, `cox.js` (Cox mode), `analytics.js` (map, stats, compare, Cox report), `train.js` (rowers, goals, fitness, trophies, board, crews, weekly email), `lineup.js` (Crew screen), `sw.js`, `build.py`, `version.json`, `icon.svg`, `vendor/` (Leaflet 1.9.4, Inter Black).
+
+## Done this chat (Nov 24–25 2026)
+- v3.2 map, calories, segments, compare, bests, weather, notes, piece comparison, split vs rate, consistency, same-workout trend, Cox season report.
+- v3.3 rowers, Progress (goals and plans, fitness and fatigue, strength shape, stroke curve, trophies, challenges, board), improvement tips, tappable Cox report, new look.
+- v3.4 crews online and the Google map (Map / Satellite / Hybrid). v3.5–3.8 race-lane leaderboard and layout fixes.
+- v3.9 edit goal and weekly check-ins; v3.10 tab bar; v3.11 Sunday email report (loader l7); v3.12–3.13 wording and label fixes.
+- v3.14 new logo and StrokePulse wordmark. v3.15 Crew screen: lineups, crew credit, fastest lineup, seat racing, attendance, boats, shared lineup (loader l8).
+- **v3.16 Report a problem**: Settings → Help → Report a problem opens a box (What happened? / What did you expect?) → Open email, already filled in.
+  - Tested in a browser at 390 px (iPhone and Android) and 1280 px: item tap-sized, box opens, fits and focuses the first box, Open email closes it and the backup toast shows. Address, subject, CRLF line breaks and the 1) 2) • order with line breaks removed were all checked, plus counts right, no names, no page errors. Earlier server and browser tests still pass.
+  - Not tested: a real email from a real phone, and Gmail on iPhone.
+
+## Waiting on Jeff
+- Send one test report from your phone (Settings → Report a problem) and check it in Gmail.
+- After that, if you want it: the daily "StrokePulse problem reports" scheduled task (I'll ask before creating it).
+- Live site: not set up. Say yes when you want one (new D1, Worker and `live/` folder).
+- Real-world checks: rowing on the water, the real Google map, the stroke curve from the phone's sensor, crew credit between real phones.
+
+## Next version numbers
+- App: sp-20261125q (v3.17) or the next day's date letter a. Loader: l9.
 
 ## Resources (StrokePulse owns only these)
-- GitHub repo: `jeffscarcello-tech/strokepulse-builds` (public)
-  - `test/` app.json + build.txt for the test site; `live/` later; `source/` all source + tests
-- Cloudflare D1: `strokepulsetest` (6d5c9e77-b698-47b1-9899-5ef6b2746230)
-- Site Worker (loader): `strokepulsetest` — https://strokepulsetest.jeffscarcello.workers.dev (binding DB → strokepulsetest; secret ADMIN_PASSWORD for /admin). Loader l5 (word timings, retx?all=1): /api/sync/* backup (cox key or coach token read-only), /api/cox/{audio,chunks,share,retx} recordings in D1 table cox_audio (BLOB, ~32 kbps chunks of 60 s) transcribed by Workers AI whisper-large-v3-turbo (binding AI), /api/live WebSocket → Durable Object LiveRoom (binding LIVE, migration v1). Coach links in table cox_share — table `sessions`, keyed by SHA-256 of the user's backup code (raw code never stored)
-- Updater Worker: `strokepulse-updater` (binding TEST_DB → strokepulsetest; secret HOOK_SECRET; cron */5)
-- Address: workers.dev for now (Jeff's choice, Nov 24 2026); custom domain later if wanted
+- GitHub repo `jeffscarcello-tech/strokepulse-builds` (public). Auto-update: push to `test/` → webhook → `strokepulse-updater` installs into D1.
+- Cloudflare D1 `strokepulsetest` (6d5c9e77-b698-47b1-9899-5ef6b2746230).
+- Site Worker `strokepulsetest`. Bindings:
+  - DB (D1)
+  - AI (Workers AI whisper)
+  - AUDIO (R2 `strokepulse-audio-test`)
+  - LIVE (Durable Object LiveRoom)
+  - secrets ADMIN_PASSWORD, GMAPS_KEY (Google Maps key restricted to the site) and RESEND_API_KEY (send-only key, shotpulse.app domain)
+
+  Crons: `0 * * * SUN` and `0 * * * MON` (Sunday 6 PM local reports).
+- Updater Worker `strokepulse-updater` (TEST_DB, HOOK_SECRET, cron */5).
+- Support address for problem reports: support@shotpulse.app (shared with ShotPulse; reports are kept apart by subject "StrokePulse problem (<build>)").
 
 ## Release steps
-Edit `source/`, bump `source/version.json`, run `python3 source/build.py`, run `node source/tests/server.test.mjs`,
-copy `dist/app.json` + `dist/build.txt` to `test/`, push. Check D1 `ghbuild`.
+Edit `source/`, bump `source/version.json`, run `python3 source/build.py` and the tests, copy `dist/app.json` + `dist/build.txt` to `test/`, push, then check `ghbuild` in D1. Loader changes go through the Cloudflare connector (exact edits, hash check, keep secrets).
 
-## Known limits
-- No Bluetooth heart rate (Safari can't), screen must stay on while recording.
-
-## Testing
-- `node source/tests/server.test.mjs` — updater install, loader routes, webhook signature, backup API
-- Browser: demo-mode runs at phone + desktop sizes; e2e via local HTTPS copy of the loader (auto-start, targets, backup + restore on a 2nd device)
-- Not tested: real water, real iPhone sensors
-
-## Cox mode notes
-- Recordings stored in R2 bucket `strokepulse-audio-test` (binding AUDIO, key `<keyhash>/<sid>/<idx>`) since loader l4 (Nov 24 2026). D1 `cox_audio` keeps metadata + transcripts; old D1-stored audio still readable.
-- Live audio: 16 kHz µ-law frames over WebSocket via the Durable Object; audio only flows when a coach is listening.
-- Talk-back plays through the boat speakers (phones have one output route). Text messages are cox-only.
-- Native iOS app planned once Jeff has an Apple developer account.
-- Local e2e: Miniflare (D1 + DO) with two Playwright browsers (cox phone + coach laptop).
+## Parked ideas
+- Native iOS app once the Apple developer account is ready.
+- Live site with its own address.
+- Bluetooth heart rate (needs the native app).
