@@ -133,6 +133,14 @@ body.night .wm b,body.night .wm i{color:var(--fg)}
 .hero .wm{font-size:31px;line-height:1}
 .hero .tag{color:var(--dim);font-size:13px;font-weight:600;margin-top:5px;letter-spacing:.3px}
 
+/* ===== Report a problem ===== */
+.repitem{display:flex;align-items:center;gap:12px;width:100%;min-height:60px;padding:10px 4px;background:none;border:0;color:var(--fg);text-align:left}
+.repitem svg{flex:none;color:var(--acc)}
+.repitem span{flex:1;min-width:0}.repitem b{display:block;font-size:17px}.repitem small{display:block;color:var(--dim);font-size:13px;margin-top:2px;line-height:1.3}
+.repitem .chev{flex:none;color:var(--dim);font-size:24px}
+.repbox label{display:block;font-size:14px;font-weight:700;margin:12px 0 6px}
+.repbox textarea{width:100%;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font:inherit;font-size:16px;padding:10px;resize:vertical}
+.repbtns{display:flex;gap:8px;margin-top:14px}.repbtns button{flex:1;margin:0;min-height:48px}
 /* ===== look & feel (v3.3) ===== */
 :root{--hot:#ff9f1c;--r:16px;--card:linear-gradient(180deg,#121922 0%,#0d1218 100%);--edge:rgba(255,255,255,.06)}
 body.glare{--hot:#b85600;--card:var(--panel);--edge:var(--line)}
@@ -268,6 +276,10 @@ body.glare .tiles button{box-shadow:none}
       <input class="codein" id="bkIn" placeholder="XXXX-XXXX-XXXX-XXXX-XXXX" autocomplete="off" autocapitalize="characters">
       <button class="big" id="bkRestore" style="height:48px;font-size:17px">Restore from code</button>
     </div>
+    <div class="card"><h2>Help</h2>
+      <button class="repitem" id="repBtn"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg><span><b>Report a problem</b><small>Tell us what went wrong. Your version and phone type are added for you.</small></span><span class="chev">›</span></button>
+    </div>
+    <p class="ver">StrokePulse <b>v__LABEL__</b> · build __BUILD__</p>
   </div>
 </section>
 
@@ -298,6 +310,7 @@ body.glare .tiles button{box-shadow:none}
     <p><b>☀︎ button:</b> cycles Dark (indoor/cloudy) → Bright (direct sun) → Night (dim red for dark mornings).</p><br>
     <p><b>Backup:</b> sessions back up automatically when you have signal. Your backup code is in Settings — save it somewhere safe.</p><br>
     <p>Version <b>v__LABEL__</b> (build __BUILD__)</p>
+    <p>Something not working? Settings → <b>Report a problem</b> opens a short form, then an email with your version and phone type already filled in.</p>
   </div></div>
 </section>
 
@@ -939,7 +952,51 @@ if('serviceWorker' in navigator && location.protocol==='https:'){
   navigator.serviceWorker.addEventListener('controllerchange',()=>{ if(wantReload) location.reload(); });
 }
 setInterval(()=>{ if(swWaiting) $('upd').classList.toggle('on', !run); }, 1000);
-window.__SP = { processAccel, strokeEvent, mot, S, handleFix, gps }; // test hook
+/* ---------- Report a problem: a short in-app form, then a ready-to-send email ----------
+   The Gmail app on iPhone drops line breaks when it sends, so every part starts with a marker (1) 2) •) and still reads in order. */
+const REPORT_TO = 'support@shotpulse.app';
+function reportInfo(){
+  const ua = navigator.userAgent || '';
+  const dev = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ? 'iPad' : /Android/.test(ua) ? (/Mobile/.test(ua) ? 'Android phone' : 'Android tablet') : /Mac/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : 'Other';
+  const ios = ua.match(/OS (\d+)[_.](\d+)/), and = ua.match(/Android ([\d.]+)/);
+  const os = ios && /iPhone|iPad/.test(ua) ? 'iOS ' + ios[1] + '.' + ios[2] : and ? 'Android ' + and[1] : '';
+  const inst = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone ? 'home-screen app' : 'browser';
+  const scr = document.querySelector('.screen.on'), cox = LS.get('sp_cox', {});
+  const n = k => { const v = LS.get(k, []); return Array.isArray(v) ? v.length : 0; };
+  const crews = (LS.get('sp_profiles', []) || []).reduce((a, p) => a + ((p.crews || []).length), 0);
+  return [
+    'Build: ' + APP_BUILD + ' (v' + APP_LABEL + ')',
+    'Device: ' + dev + (os ? ' (' + os + ')' : ''),
+    'Opened as: ' + inst,
+    'Screen: ' + screen.width + 'x' + screen.height + ', window ' + innerWidth + 'x' + innerHeight,
+    'Page: ' + (scr ? scr.id.replace('scr-', '') : '?') + (location.hash || ''),
+    'Online: ' + (navigator.onLine === false ? 'no' : 'yes'),
+    'Sessions / rowers / lineups on this phone: ' + n('sp_index') + ' / ' + Math.max(1, n('sp_profiles')) + ' / ' + n('sp_lineups'),
+    'Crews: ' + crews + ' · Cox mode: ' + (cox.on ? 'on' : 'off') + ' · Demo: ' + (S.demo === '1' ? 'on' : 'off') + ' · Recording now: ' + (run && !run.armed ? 'yes' : 'no'),
+    'Time: ' + new Date().toString(),
+    'Browser: ' + ua
+  ].join('\n');
+}
+function reportUrl(what, expected){
+  const clean = v => String(v || '').trim().replace(/\s*[\r\n]+\s*/g, ' / ').slice(0, 1000);
+  const subject = 'StrokePulse problem (' + APP_BUILD + ')';
+  const body = '1) What happened: ' + clean(what) + '\n\n2) What I expected: ' + clean(expected) + '\n\n— Details for the fix (please leave) —\n' + reportInfo().split('\n').map(l => '• ' + l).join('\n');
+  return 'mailto:' + REPORT_TO + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body).replace(/%0A/g, '%0D%0A');
+}
+function reportProblem(what, expected){
+  location.href = reportUrl(what, expected);
+  setTimeout(() => toast('If no email opened, write to ' + REPORT_TO), 1200);
+}
+function reportSheet(){
+  openSheet('<div class="repbox"><h2 style="margin-bottom:2px">Report a problem</h2>' +
+    '<label for="repWhat">What happened?</label><textarea id="repWhat" maxlength="1000" style="height:96px" placeholder="e.g. I pressed START on the water and the split stayed at –:–."></textarea>' +
+    '<label for="repExp">What did you expect?</label><textarea id="repExp" maxlength="1000" style="height:72px" placeholder="e.g. The split to show once the boat was moving."></textarea>' +
+    '<p class="muted" style="margin-top:10px;font-size:13px">Next, your email app opens with this filled in, plus your version and phone type. Just tap Send. No names, routes, recordings or session details are included.</p>' +
+    '<div class="repbtns"><button class="big alt" id="repCancel">Cancel</button><button class="big" id="repGo">Open email</button></div></div>',
+    el => { $('repCancel').onclick = closeSheet; $('repGo').onclick = () => { const w = $('repWhat').value, e = $('repExp').value; closeSheet(); reportProblem(w, e); }; setTimeout(() => { try{ $('repWhat').focus(); }catch(e){} }, 350); });
+}
+$('repBtn').onclick = reportSheet;
+window.__SP = { processAccel, strokeEvent, mot, S, handleFix, gps, reportInfo, reportUrl, reportProblem, reportSheet }; // test hook
 </script>
 <script src="/cox.js?v=__BUILD__"></script>
 <script src="/analytics.js?v=__BUILD__"></script>
