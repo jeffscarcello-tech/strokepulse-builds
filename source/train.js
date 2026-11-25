@@ -350,7 +350,7 @@ function afterSave(id){
   ensure(); const pid = cur().id, L = sessionsOf(pid), R = achieve(L), seen = LS.get('sp_ach_' + pid, {}), got = [];
   for(const r of R) if(r.t >= 0 && (seen[r.a.k] == null || seen[r.a.k] < r.t)){ got.push(r); seen[r.a.k] = r.t; }
   LS.set('sp_ach_' + pid, seen);
-  setTimeout(() => pushCrews(pid), 1500);
+  setTimeout(() => { pushCrews(pid); pushReport(pid, true); }, 1500);
   if(got.length){ LS.set('sp_newach', { id, list:got.map(r => r.a.ic + ' ' + r.a.n + ' — ' + TIER[r.t][0]) }); toast('🏅 New trophy: ' + got[0].a.n); }
 }
 
@@ -480,7 +480,7 @@ function checkin(force){
   ensure(); const L = sessionsOf(p.id), c = buildCheckin(g, L, wk);
   r.checks[wk] = c; r.adj = c.adj; r.focus = c.focus;
   const nx = makePlan(g, L).weeks[0]; r.next = { w:reportWeek() === thisWeek() ? thisWeek() + 7 * DAY : thisWeek(), n:nx.ses.length, m:nx.m };
-  setGoal(p.id, g); showCheckin(wk); return true;
+  setGoal(p.id, g); showCheckin(wk); pushReport(p.id, true); return true;
 }
 function showCheckin(wk){
   const p = cur(), g = goalOf(p.id), r = g.race; if(!r || !r.checks || !r.checks[wk]) return; const c = r.checks[wk], st = STAT[c.status] || STAT.nodata;
@@ -520,6 +520,56 @@ function checkinsCard(g, L){
     ks.slice(0, 12).map(k => { const c = r.checks[k], st = STAT[c.status] || STAT.nodata; return '<div class="row" data-ci="' + k + '" style="cursor:pointer"><span>' + new Date(k).toLocaleDateString(undefined, { month:'short', day:'numeric' }) + ' · <b style="color:' + st[1] + '">' + st[0] + '</b></span><span class="muted">' + (c.pred ? fmtTime(c.pred) : '–') + ' ›</span></div>'; }).join('')
     : '<p class="muted">Every Sunday (or the next time you open the app) you get a check-in: how the week went, whether you’re on track for race day, and the plan adjusted to match.</p>') +
     '<button class="big alt" id="ciNow" style="margin-top:10px">Check in now</button></div>';
+}
+
+/* ================= weekly email report: the phone builds the check-in, the server emails it Sunday 6 PM ================= */
+const hexr = n => [...crypto.getRandomValues(new Uint8Array(n))].map(b => b.toString(16).padStart(2, '0')).join('');
+function snapFor(p){
+  ensure(); const L = sessionsOf(p.id), g = goalOf(p.id), wk = thisWeek(), now = L.filter(s => s.start >= wk);
+  const f = d => new Date(d).toLocaleDateString(undefined, { month:'short', day:'numeric' });
+  const S = { weekLabel:f(wk) + '–' + f(wk + 6 * DAY), asOf:new Date().toLocaleString(undefined, { weekday:'short', month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }) };
+  if(g.race){
+    const r = g.race, c = buildCheckin(g, L, wk), st = STAT[c.status] || STAT.nodata;
+    Object.assign(S, { goal:fmtTime(r.time) + ' for ' + r.dist.toLocaleString() + ' m by ' + new Date(r.by + 'T12:00').toLocaleDateString(undefined, { month:'short', day:'numeric' }),
+      status:{ text:st[0], color:/^#/.test(st[1]) ? st[1] : '#8a97a6' }, sessions:c.n + ' / ' + c.pn, distance:kmTxt(c.m), predicted:c.pred ? fmtTime(c.pred) : '–', done:c.pn ? c.n / c.pn : 0,
+      trend:c.pred && c.prevPred ? (c.pred <= c.prevPred ? (c.prevPred - c.pred).toFixed(1) + ' s faster than last week' : (c.pred - c.prevPred).toFixed(1) + ' s slower than last week') + ' · on-track time now ' + fmtTime(c.need) : c.pred ? 'On-track time now ' + fmtTime(c.need) : '',
+      heading:c.proj ? 'At this rate: about ' + fmtTime(Math.round(c.proj)) + ' on race day (goal ' + fmtTime(r.time) + ').' : '',
+      changes:c.changes, tips:c.tips });
+    const ks = Object.keys(r.checks || {}).map(Number).filter(k => k < wk).sort((a, b) => a - b);
+    S.series = ks.map(k => r.checks[k]).concat([c]).filter(x => x.pred).map(x => ({ w:f(x.w), p:fmtTime(x.pred), n:fmtTime(x.need), ok:x.pred <= x.need + 1 }));
+    const g2 = JSON.parse(JSON.stringify(g)); g2.race.adj = c.adj; g2.race.focus = c.focus; const pl = makePlan(g2, L).weeks, nx = pl[1] || pl[0];
+    S.planLabel = pl[1] ? 'Next week’s plan · ' + nx.label : 'This week’s plan'; S.plan = nx.ses.map(x => ({ c:TYPES[x.t].c, n:x.n, d:x.d }));
+  } else {
+    Object.assign(S, { sessions:String(now.length), distance:kmTxt(now.reduce((a, s) => a + s.dist, 0)), time:fmtTime(now.reduce((a, s) => a + s.time, 0)),
+      tips:challenges(L).map(c => [c.p >= 1 ? '✅' : c.ic, c.n, c.v + ' — ' + c.d]) });
+  }
+  return S;
+}
+async function pushReport(pid, force){
+  const p = profiles().find(x => x.id === (pid || cur().id)); if(!p || !p.report || !p.report.email || !navigator.onLine) return;
+  if(!force && Date.now() - (p.report.pushed || 0) < 5 * 60000) return;
+  try{ const r = await fetch('/api/report/save', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ rid:p.report.rid, secret:p.report.secret, email:p.report.email, name:p.name, tz:Intl.DateTimeFormat().resolvedOptions().timeZone, snap:snapFor(p) }) });
+    if(r.ok){ p.report.pushed = Date.now(); saveProfile(p); } }catch(e){}
+}
+function emailCard(p){
+  const R = p.report || {};
+  return '<div class="card"><h2>Weekly email report</h2>' + (R.email
+    ? '<p>Every <b>Sunday at 6 PM</b> this check-in goes to <b>' + esc(R.email) + '</b>: progress, on-track chart, plan changes and next week’s sessions.</p><div style="display:flex;gap:8px;margin-top:10px"><button class="big" id="emTest" style="margin:0;flex:1">Send one now</button><button class="big alt" id="emOff" style="margin:0;flex:1">Turn off</button></div>' +
+      '<p class="muted" style="margin-top:8px;font-size:13px">It uses the numbers from the last time the app was opened, so open it once on Sunday for the freshest report. Each email has a one-tap unsubscribe link.</p>'
+    : '<p class="muted">Get this week’s check-in by email every Sunday at 6 PM.</p><div class="frm"><label>Email address</label><div style="display:flex;gap:8px"><input id="emAddr" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com"><button class="big" id="emOn" style="width:96px;margin:0;height:46px">Turn on</button></div></div>') + '</div>';
+}
+function wireEmail(p){
+  const save = async (email) => { const P = profiles().find(x => x.id === p.id); P.report = P.report && P.report.rid ? P.report : { rid:hexr(8), secret:hexr(16) };
+    const r = await fetch('/api/report/save', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ rid:P.report.rid, secret:P.report.secret, email, name:P.name, tz:Intl.DateTimeFormat().resolvedOptions().timeZone, snap:email ? snapFor(P) : null }) });
+    if(!r.ok){ const j = await r.json().catch(() => ({})); throw new Error(j.error || 'net'); }
+    P.report.email = email || null; P.report.pushed = Date.now(); saveProfile(P); };
+  if($t('emOn')) $t('emOn').onclick = async () => { const e = $t('emAddr').value.trim(); if(!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e)){ toast('Check the email address'); return; }
+    try{ await save(e); toast('Weekly report on'); renderProgress(); }catch(err){ toast(err.message === 'bad_email' ? 'Check the email address' : 'Couldn’t save — check your connection'); } };
+  if($t('emOff')) $t('emOff').onclick = async () => { try{ await save(null); }catch(e){} toast('Weekly report off'); renderProgress(); };
+  if($t('emTest')) $t('emTest').onclick = async () => { const b = $t('emTest'); b.disabled = true; b.textContent = 'Sending…';
+    try{ await pushReport(p.id, true); const P = profiles().find(x => x.id === p.id); const r = await fetch('/api/report/test', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ rid:P.report.rid, secret:P.report.secret }) });
+      const j = await r.json().catch(() => ({})); toast(r.ok ? 'Sent — check your inbox (and spam)' : j.error === 'too_many_tests' ? 'That’s enough tests for today' : 'Couldn’t send — try again later'); }
+    catch(e){ toast('Couldn’t send — check your connection'); } b.disabled = false; b.textContent = 'Send one now'; };
 }
 
 /* ================= the Progress screen ================= */
@@ -589,11 +639,14 @@ function goalsTab(box, L, p){
   $t('gSet').onclick = () => { const t = parseSplit($t('gTime').value), d = +$t('gDist').value, by = $t('gBy').value; if(!t || t < 60){ toast('Enter a target time like 7:00'); return; } if(!by || new Date(by + 'T12:00') < Date.now()){ toast('Pick a future date'); return; }
     const pr = predict(L, d), old = EDIT && g.race;
     g.race = old && old.dist === d ? Object.assign(old, { time:t, by, days:+$t('gDays').value }) : Object.assign({ dist:d, time:t, by, days:+$t('gDays').value, startT:pr ? pr.t : null, set:Date.now() }, old ? { checks:old.checks, adj:old.adj, focus:old.focus } : {});
-    setGoal(p.id, g); EDIT = false; toast(old ? 'Goal updated — plan rebuilt' : 'Plan ready'); renderProgress(); };
+    setGoal(p.id, g); EDIT = false; pushReport(p.id, true); toast(old ? 'Goal updated — plan rebuilt' : 'Plan ready'); renderProgress(); };
   if($t('gCancel')) $t('gCancel').onclick = () => { EDIT = false; renderProgress(); };
   wireOther(L, g, p);
 }
 function otherGoals(L, g){
+  return otherGoals0(L, g) + emailCard(cur());
+}
+function otherGoals0(L, g){
   const w0 = thisWeek(), now = L.filter(s => s.start >= w0), m = now.reduce((a, s) => a + s.dist, 0);
   return '<div class="card"><h2>Weekly goals</h2><div class="frm" style="display:flex;gap:8px"><div style="flex:1"><label>Distance per week (' + (imp() ? 'mi' : 'km') + ')</label><input id="gWk" type="number" inputmode="decimal" value="' + (g.weekM ? (imp() ? (g.weekM / 1609.344).toFixed(0) : g.weekM / 1000) : '') + '" placeholder="off"></div><div style="flex:1"><label>Sessions per week</label><input id="gWn" type="number" inputmode="numeric" value="' + (g.weekN || '') + '" placeholder="off"></div></div>' +
     (g.weekM ? '<div class="row" style="margin-top:10px"><span>Distance this week</span><b>' + kmTxt(m) + ' / ' + kmTxt(g.weekM) + '</b></div>' + pbarHtml(m / g.weekM) : '') +
@@ -601,6 +654,7 @@ function otherGoals(L, g){
     '<p class="muted" style="margin-top:8px;font-size:13px">Weeks run Monday to Sunday.</p></div>';
 }
 function wireOther(L, g, p){
+  wireEmail(p);
   const sv = () => { const a = parseFloat($t('gWk').value), b = parseInt($t('gWn').value); g.weekM = a > 0 ? Math.round(a * (imp() ? 1609.344 : 1000)) : 0; g.weekN = b > 0 ? b : 0; setGoal(p.id, g); renderProgress(); };
   $t('gWk').onchange = sv; $t('gWn').onchange = sv;
 }
@@ -739,8 +793,8 @@ function detailExtra(id, sm, data, anchor){
   const cv = wrap.querySelector('.crv'); if(cv) drawCurve(cv, [curveStats(data.curve.a)]);
 }
 
-window.TRN = { checkin, showCheckin, buildCheckin, crewSheet, pushCrews, crewApi, profiles, cur, owner, mine, kg, setKg, chip, brand, profileSheet, open, renderProgress, afterSave, detailExtra, improve, makePlan, predict, fitness, shape, achieve, challenges, curveStats, align, ensure, sessionLoad };
+window.TRN = { snapFor, pushReport, checkin, showCheckin, buildCheckin, crewSheet, pushCrews, crewApi, profiles, cur, owner, mine, kg, setKg, chip, brand, profileSheet, open, renderProgress, afterSave, detailExtra, improve, makePlan, predict, fitness, shape, achieve, challenges, curveStats, align, ensure, sessionLoad };
 brand(); checkJoinLink();
-const autoCheck = () => { if(document.visibilityState !== 'visible' || location.hash.indexOf('#coach=') === 0) return; setTimeout(() => { try{ if(!document.querySelector('#sheet.on, .sheet.on')) checkin(false); }catch(e){} }, 1500); };
+const autoCheck = () => { if(document.visibilityState !== 'visible' || location.hash.indexOf('#coach=') === 0) return; setTimeout(() => { try{ if(!document.querySelector('#sheet.on, .sheet.on')) checkin(false); }catch(e){} try{ profiles().forEach(p => pushReport(p.id)); }catch(e){} }, 1500); };
 autoCheck(); document.addEventListener('visibilitychange', autoCheck); window.addEventListener('hashchange', checkJoinLink);
 })();

@@ -160,3 +160,35 @@ console.log('ALL SERVER TESTS PASSED');
   r = await loader.fetch(new Request('https://x/api/config'), Object.assign({}, env, { GMAPS_KEY: 'AIzaTEST' })); assert.equal((await r.json()).gmaps, 'AIzaTEST');
   console.log('CREW TESTS PASSED');
 }
+{ // WEEKLY REPORT EMAILS
+  const sent = []; const realFetch = globalThis.fetch;
+  globalThis.fetch = async (u, o) => { if (String(u).includes('api.resend.com')) { sent.push(JSON.parse(o.body)); return new Response('{"data":[{"id":"x"}]}', { status: 200 }); } return realFetch(u, o); };
+  const E = Object.assign({}, env, { RESEND_API_KEY: 're_test' });
+  const P = (op, body) => loader.fetch(new Request('https://x/api/report/' + op, { method: 'POST', body: JSON.stringify(body) }), E);
+  const rid = 'a'.repeat(16), secret = 'b'.repeat(32);
+  const snap = { weekLabel: 'Nov 17–23', goal: '7:30 for 2,000 m by Jan 6', status: { text: 'On track', color: '#2ed47a' }, sessions: '4 / 5', distance: '24 km', predicted: '7:41', done: 0.8, series: [{ w: 'Nov 17', p: '7:41', n: '7:44', ok: true }], changes: ['Weekly distance up 5%'], tips: [['✅', 'Right <b>on</b> track', 'Keep going']], plan: [{ c: '#22c3ee', n: 'Steady 10 km', d: 'rate 18–22' }], asOf: 'Sun Nov 23' };
+  assert.equal((await P('save', { rid, secret, email: 'not an email', snap })).status, 400);
+  assert.equal((await P('save', { rid, secret, email: 'jeff@example.com', name: 'Emily', tz: 'America/Winnipeg', snap })).status, 200);
+  assert.equal((await P('save', { rid, secret: 'c'.repeat(32), email: 'x@y.com' })).status, 403);   // someone else's id
+  assert.equal((await P('test', { rid, secret })).status, 200);
+  assert.equal(sent.length, 1); const m = sent[0][0];
+  assert.equal(m.from, 'StrokePulse <strokepulse@shotpulse.app>'); assert.deepEqual(m.to, ['jeff@example.com']);
+  assert.ok(m.html.includes('Right &lt;b&gt;on&lt;/b&gt; track')); assert.ok(!m.html.includes('<b>on</b>'));   // escaped
+  assert.match(m.headers['List-Unsubscribe'], /\/u\?t=[a-f0-9]{32}>$/); assert.ok(m.text.includes('Stop these emails'));
+  // scheduled: only at Sunday 6 PM in the rower's own zone, once
+  const RealDate = Date; const at = iso => { globalThis.Date = class extends RealDate { constructor(...a) { super(...(a.length ? a : [iso])); } static now() { return new RealDate(iso).getTime(); } }; };
+  const ctx = { waitUntil: p => p };
+  at('2026-11-29T23:00:00Z'); await loader.scheduled({}, E, { waitUntil: async p => await p }); globalThis.Date = RealDate;   // 5 PM Winnipeg: not yet
+  assert.equal(sent.length, 1);
+  at('2026-11-30T00:00:00Z'); await loader.scheduled({}, E, { waitUntil: async p => await p }); globalThis.Date = RealDate;   // 6 PM Sunday Winnipeg
+  assert.equal(sent.length, 2);
+  at('2026-11-30T00:30:00Z'); await loader.scheduled({}, E, { waitUntil: async p => await p }); globalThis.Date = RealDate;   // same hour again: no repeat
+  assert.equal(sent.length, 2);
+  // unsubscribe link
+  const ut = m.headers['List-Unsubscribe'].match(/t=([a-f0-9]{32})/)[1];
+  let r = await loader.fetch(new Request('https://x/u?t=' + ut), E); assert.ok((await r.text()).includes('jeff@example.com'));
+  r = await loader.fetch(new Request('https://x/u?t=' + ut, { method: 'POST' }), E); assert.ok((await r.text()).includes('no more weekly reports'));
+  assert.equal((await P('test', { rid, secret })).status, 404);
+  globalThis.fetch = realFetch;
+  console.log('REPORT EMAIL TESTS PASSED');
+}

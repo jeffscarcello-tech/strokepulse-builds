@@ -1,6 +1,6 @@
 // StrokePulse site Worker (loader) — serves the app installed in D1 by strokepulse-updater,
 // plus cloud backup, Cox mode recordings/transcripts, private coach links, and the live coach relay.
-const LOADER = 'l6';
+const LOADER = 'l7';
 let appCache = null, appChecked = 0;
 async function ensure(db) {
   await db.prepare('CREATE TABLE IF NOT EXISTS appmeta (k TEXT PRIMARY KEY, v TEXT NOT NULL)').run();
@@ -132,6 +132,117 @@ async function crew(request, env, op, url) {
     return json({ ok: true });
   }
   return json({ error: 'unknown' }, 404);
+}
+
+/* ---------- weekly report emails (Resend): the phone uploads a ready-made check-in snapshot, the server emails it Sunday 6 PM local ---------- */
+const SITE = 'https://strokepulsetest.jeffscarcello.workers.dev';
+const FROM = 'StrokePulse <strokepulse@shotpulse.app>';
+const SEND_DOW = 0, SEND_HOUR = 18;   // Sunday, 6 PM in each rower's own time zone
+const EMAIL_RE = /^[^\s@<>"',;]{1,64}@[A-Za-z0-9.-]{1,190}\.[A-Za-z]{2,24}$/;
+let repReady = false;
+async function repTables(db) {
+  if (repReady) return;
+  await db.prepare('CREATE TABLE IF NOT EXISTS report_subs (rid TEXT PRIMARY KEY, sh TEXT NOT NULL, email TEXT NOT NULL, name TEXT NOT NULL, tz TEXT NOT NULL, snap TEXT, updated INTEGER NOT NULL, ut TEXT NOT NULL UNIQUE, last_wk TEXT, tday TEXT, tn INTEGER NOT NULL DEFAULT 0, created INTEGER NOT NULL)').run();
+  repReady = true;
+}
+const goodTz = tz => { try { new Intl.DateTimeFormat('en-CA', { timeZone: tz }); return true; } catch (e) { return false; } };
+function localParts(tz, d) {
+  const p = {}; for (const x of new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', weekday: 'short', hour12: false }).formatToParts(d || new Date())) p[x.type] = x.value;
+  return { date: p.year + '-' + p.month + '-' + p.day, hour: +p.hour % 24, dow: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(p.weekday) };
+}
+const hesc = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const okColor = c => /^#[0-9a-fA-F]{6}$/.test(c || '') ? c : '#2f9bff';
+/* the email itself: tables + inline styles so Gmail, Outlook and iPhone Mail all show it right */
+function reportEmail(sub, snap, unsubUrl) {
+  const S = snap || {}, st = S.status || {}, col = okColor(st.color), name = hesc(sub.name);
+  const box = (k, v) => '<td style="width:33%;padding:10px;background:#f4f7fb;border-radius:10px;text-align:center"><div style="font-size:11px;letter-spacing:1px;color:#6b7785;text-transform:uppercase">' + hesc(k) + '</div><div style="font-size:22px;font-weight:800;color:#0b1724;margin-top:2px">' + hesc(v) + '</div></td>';
+  const sec = t => '<div style="font-size:12px;letter-spacing:2px;font-weight:800;color:#e07800;margin:22px 0 8px">' + hesc(t) + '</div>';
+  const pct = Math.max(0, Math.min(100, Math.round((+S.done || 0) * 100)));
+  let h = '<div style="background:#eef2f7;padding:18px 0;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">' +
+    '<table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#ffffff;border-radius:16px;overflow:hidden">' +
+    '<tr><td style="background:#0b1724;padding:18px 22px"><div style="color:#5ab4ff;font-weight:900;font-size:18px;letter-spacing:1px">STROKEPULSE</div><div style="color:#c9d3de;font-size:13px;margin-top:2px">' + name + ' · weekly check-in · ' + hesc(S.weekLabel) + '</div></td></tr>' +
+    '<tr><td style="padding:20px 22px">';
+  if (S.goal) {
+    h += '<div style="font-size:26px;font-weight:900;color:' + col + '">' + hesc(st.text) + '</div><div style="color:#56616d;font-size:14px;margin-top:2px">Goal: ' + hesc(S.goal) + '</div>';
+  } else h += '<div style="font-size:24px;font-weight:900;color:#0b1724">Your week</div>';
+  h += '<table role="presentation" width="100%" cellpadding="0" cellspacing="6" style="margin-top:12px"><tr>' + box('Sessions', S.sessions) + box('Distance', S.distance) + box(S.goal ? 'Predicted' : 'Time', S.goal ? S.predicted : S.time) + '</tr></table>';
+  if (S.goal) h += '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:8px;border-radius:5px;overflow:hidden"><tr><td style="height:10px;width:' + pct + '%;background:#2f9bff"></td><td style="height:10px;background:#e3e9f0"></td></tr></table>' +
+    (S.trend ? '<div style="color:#56616d;font-size:13px;margin-top:6px">' + hesc(S.trend) + '</div>' : '');
+  if (Array.isArray(S.series) && S.series.length) {
+    h += sec('ON TRACK? WEEK BY WEEK') + '<table role="presentation" width="100%" cellpadding="6" cellspacing="0" style="font-size:14px;border-collapse:collapse"><tr style="color:#6b7785;font-size:12px"><td>Week</td><td>Predicted</td><td>On-track</td><td></td></tr>' +
+      S.series.slice(-10).map(r => '<tr style="border-top:1px solid #e8edf3"><td>' + hesc(r.w) + '</td><td style="font-weight:800">' + hesc(r.p) + '</td><td style="color:#6b7785">' + hesc(r.n) + '</td><td style="font-weight:800;color:' + (r.ok ? '#16a34a' : '#dc2626') + '">' + (r.ok ? '✓' : '•') + '</td></tr>').join('') + '</table>' +
+      (S.heading ? '<div style="color:#56616d;font-size:13px;margin-top:6px">' + hesc(S.heading) + '</div>' : '');
+  }
+  if (Array.isArray(S.changes) && S.changes.length) h += sec('PLAN CHANGES FOR NEXT WEEK') + S.changes.slice(0, 6).map(c => '<div style="padding:6px 0;font-size:15px;color:#0b1724">🔧 ' + hesc(c) + '</div>').join('');
+  if (Array.isArray(S.tips) && S.tips.length) h += sec('SUGGESTIONS') + S.tips.slice(0, 6).map(t => '<div style="padding:8px 0;border-top:1px solid #eef2f6"><div style="font-weight:800;font-size:15px;color:#0b1724">' + hesc(t[0]) + ' ' + hesc(t[1]) + '</div><div style="color:#56616d;font-size:14px;margin-top:2px">' + hesc(t[2]) + '</div></div>').join('');
+  if (Array.isArray(S.plan) && S.plan.length) h += sec((S.planLabel || 'NEXT WEEK').toUpperCase()) + S.plan.slice(0, 8).map(x => '<div style="padding:7px 0;border-top:1px solid #eef2f6"><span style="display:inline-block;width:10px;height:10px;border-radius:5px;background:' + okColor(x.c) + ';margin-right:8px"></span><b style="color:#0b1724">' + hesc(x.n) + '</b><div style="color:#56616d;font-size:13px;margin-left:18px">' + hesc(x.d) + '</div></div>').join('');
+  h += '<div style="text-align:center;margin:24px 0 6px"><a href="' + SITE + '/" style="display:inline-block;background:#1f74ff;color:#ffffff;text-decoration:none;font-weight:800;padding:12px 22px;border-radius:12px">Open StrokePulse</a></div>' +
+    '<div style="color:#8a95a1;font-size:12px;text-align:center;margin-top:12px">Based on sessions up to ' + hesc(S.asOf) + '. Open the app before Sunday evening for the freshest numbers.<br><a href="' + unsubUrl + '" style="color:#8a95a1">Stop these emails</a></div>' +
+    '</td></tr></table></td></tr></table></div>';
+  const text = 'StrokePulse weekly check-in - ' + (S.weekLabel || '') + '\n' + (S.goal ? (st.text || '') + '\nGoal: ' + S.goal + '\n' : '') + 'Sessions: ' + (S.sessions || '') + '  Distance: ' + (S.distance || '') + (S.goal ? '  Predicted: ' + (S.predicted || '') : '') + '\n' +
+    (S.changes || []).map(c => '- ' + c).join('\n') + '\n' + (S.tips || []).map(t => '* ' + t[1] + ': ' + t[2]).join('\n') + '\n\nOpen StrokePulse: ' + SITE + '/\nStop these emails: ' + unsubUrl;
+  return { subject: 'Your StrokePulse week: ' + (S.goal ? (st.text || 'check-in') : (S.sessions || '0') + ' sessions') + ' · ' + (S.weekLabel || ''), html: h, text };
+}
+async function sendBatch(env, msgs) {
+  if (!env.RESEND_API_KEY) return { status: 0, body: 'no_key' };
+  const r = await fetch('https://api.resend.com/emails/batch', { method: 'POST', headers: { 'Authorization': 'Bearer ' + env.RESEND_API_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify(msgs) });
+  return { status: r.status, body: (await r.text()).slice(0, 300) };
+}
+function msgFor(sub) {
+  const u = SITE + '/u?t=' + sub.ut, e = reportEmail(sub, sub.snap ? JSON.parse(sub.snap) : {}, u);
+  return { from: FROM, to: [sub.email], subject: e.subject, html: e.html, text: e.text, headers: { 'List-Unsubscribe': '<' + u + '>', 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' } };
+}
+async function report(request, env, op) {
+  const db = env.DB; await repTables(db);
+  if (request.method !== 'POST') return json({ error: 'method' }, 405);
+  const t = await request.text(); if (t.length > 60000) return json({ error: 'too_big' }, 413);
+  let b; try { b = JSON.parse(t || '{}'); } catch (e) { return json({ error: 'bad_json' }, 400); }
+  if (!/^[a-f0-9]{16}$/.test(b.rid || '') || !/^[a-f0-9]{32}$/.test(b.secret || '')) return json({ error: 'bad_id' }, 400);
+  const row = await db.prepare('SELECT * FROM report_subs WHERE rid = ?1').bind(b.rid).first(), sh = await sha('rep:' + b.secret);
+  if (row && row.sh !== sh) return json({ error: 'not_yours' }, 403);
+  const now = Date.now();
+  if (op === 'save') {
+    if (!b.email) { if (row) await db.prepare('DELETE FROM report_subs WHERE rid = ?1').bind(b.rid).run(); return json({ ok: true, off: true }); }
+    const email = String(b.email).trim().slice(0, 254); if (!EMAIL_RE.test(email)) return json({ error: 'bad_email' }, 400);
+    const tz = goodTz(b.tz) ? String(b.tz).slice(0, 60) : 'America/Winnipeg', name = cleanName(b.name) || 'Rower';
+    const snap = b.snap && typeof b.snap === 'object' ? JSON.stringify(b.snap).slice(0, 50000) : (row ? row.snap : null);
+    if (row) await db.prepare('UPDATE report_subs SET email = ?2, name = ?3, tz = ?4, snap = ?5, updated = ?6 WHERE rid = ?1').bind(b.rid, email, name, tz, snap, now).run();
+    else await db.prepare('INSERT INTO report_subs (rid, sh, email, name, tz, snap, updated, ut, created) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?7)').bind(b.rid, sh, email, name, tz, snap, now, hex(16)).run();
+    return json({ ok: true });
+  }
+  if (op === 'test') {
+    if (!row) return json({ error: 'not_subscribed' }, 404);
+    const day = new Date().toISOString().slice(0, 10), n = row.tday === day ? row.tn : 0;
+    if (n >= 5) return json({ error: 'too_many_tests' }, 429);
+    await db.prepare('UPDATE report_subs SET tday = ?2, tn = ?3 WHERE rid = ?1').bind(b.rid, day, n + 1).run();
+    const r = await sendBatch(env, [msgFor(row)]);
+    await db.prepare("INSERT OR REPLACE INTO appmeta (k, v) VALUES ('replog', ?1)").bind(JSON.stringify({ at: now, kind: 'test', n: 1, status: r.status, body: r.body })).run().catch(() => {});
+    return r.status === 200 ? json({ ok: true }) : json({ error: 'send_failed', status: r.status }, 502);
+  }
+  return json({ error: 'unknown' }, 404);
+}
+async function unsubscribe(request, env, url) {
+  const db = env.DB; await repTables(db); const tok = url.searchParams.get('t') || '';
+  const page = (msg) => res('<!doctype html><meta name=viewport content="width=device-width,initial-scale=1"><body style="font-family:-apple-system,sans-serif;max-width:440px;margin:60px auto;padding:0 20px;text-align:center"><h2>StrokePulse</h2>' + msg, 'text/html; charset=utf-8');
+  if (!/^[a-f0-9]{32}$/.test(tok)) return page('<p>That link isn’t valid.</p>');
+  const row = await db.prepare('SELECT email FROM report_subs WHERE ut = ?1').bind(tok).first();
+  if (request.method === 'POST') { if (row) await db.prepare('DELETE FROM report_subs WHERE ut = ?1').bind(tok).run(); return page('<p>Done — no more weekly reports. You can turn them back on in the app under Progress → Goals.</p>'); }
+  if (!row) return page('<p>You’re already unsubscribed.</p>');
+  return page('<p>Stop the weekly StrokePulse report to <b>' + hesc(row.email) + '</b>?</p><form method=post><button style="padding:12px 22px;font-size:16px;border-radius:10px;border:0;background:#dc2626;color:#fff;font-weight:700">Unsubscribe</button></form>');
+}
+/* hourly on Sundays/Mondays (UTC): email everyone whose own clock says Sunday 6 PM, once per week */
+async function weeklyReports(env) {
+  const db = env.DB; await repTables(db); const now = new Date();
+  const subs = (await db.prepare('SELECT * FROM report_subs').all()).results || [];
+  const due = subs.filter(s => { const lp = localParts(s.tz, now); return lp.dow === SEND_DOW && lp.hour === SEND_HOUR && s.last_wk !== lp.date; });
+  const log = { at: Date.now(), kind: 'weekly', due: due.length, sent: 0, status: [] };
+  for (let i = 0; i < due.length; i += 100) {
+    const part = due.slice(i, i + 100), r = await sendBatch(env, part.map(msgFor)); log.status.push(r.status);
+    if (r.status === 200) { log.sent += part.length; await db.batch(part.map(s => db.prepare('UPDATE report_subs SET last_wk = ?2 WHERE rid = ?1').bind(s.rid, localParts(s.tz, now).date))); }
+    else log.err = r.body;
+  }
+  if (due.length) await db.prepare("INSERT OR REPLACE INTO appmeta (k, v) VALUES ('replog', ?1)").bind(JSON.stringify(log)).run().catch(() => {});
+  return log;
 }
 
 /* ---------- cloud backup ---------- */
@@ -335,18 +446,21 @@ async function adminInstall(request, env) {
   return res('Installed ' + b.build + ' (note: GitHub updates continue to install newer builds)', 'text/plain');
 }
 export default {
+  async scheduled(event, env, ctx) { ctx.waitUntil(weeklyReports(env)); },
   async fetch(request, env, ctx) {
     const url = new URL(request.url), p = url.pathname;
     if (p.startsWith('/api/sync/')) return sync(request, env, p.slice(10), url);
     if (p.startsWith('/api/cox/')) return cox(request, env, ctx, p.slice(9), url);
     if (p === '/api/live') return live(request, env, url);
     if (p.startsWith('/api/crew/')) return crew(request, env, p.slice(10), url);
-    if (p === '/api/config') return json({ gmaps: env.GMAPS_KEY || null });
+    if (p === '/api/config') return json({ gmaps: env.GMAPS_KEY || null, email: !!env.RESEND_API_KEY });
+    if (p.startsWith('/api/report/')) return report(request, env, p.slice(12));
+    if (p === '/u') return unsubscribe(request, env, url);
     if (p === '/admin') return request.method === 'POST' ? adminInstall(request, env) : res(ADMIN_PAGE, 'text/html; charset=utf-8');
     const app = await loadApp(env.DB);
     if (p === '/api/health') {
       const g = await env.DB.prepare("SELECT v FROM appmeta WHERE k = 'ghlast'").first().catch(() => null);
-      return res(JSON.stringify({ ok: !!app, app: 'strokepulse', build: app ? app.build : null, label: app ? app.label : null, loader: LOADER, ai: !!env.AI, live: !!env.LIVE, r2: !!env.AUDIO, gmaps: !!env.GMAPS_KEY, updater: g ? JSON.parse(g.v) : null }, null, 2), 'application/json', { 'Cache-Control': 'no-store' });
+      return res(JSON.stringify({ ok: !!app, app: 'strokepulse', build: app ? app.build : null, label: app ? app.label : null, loader: LOADER, ai: !!env.AI, live: !!env.LIVE, r2: !!env.AUDIO, gmaps: !!env.GMAPS_KEY, email: !!env.RESEND_API_KEY, updater: g ? JSON.parse(g.v) : null }, null, 2), 'application/json', { 'Cache-Control': 'no-store' });
     }
     if (!app) return res('<!doctype html><meta name=viewport content="width=device-width,initial-scale=1"><body style="font-family:-apple-system,sans-serif;text-align:center;padding:60px 20px;background:#05070a;color:#fff"><h2>StrokePulse</h2><p>Almost ready — the first version is being installed. Try again in a minute.</p>', 'text/html; charset=utf-8');
     if (p === '/' || p === '/index.html') return res(app.html, 'text/html; charset=utf-8');
