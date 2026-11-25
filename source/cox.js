@@ -6,7 +6,7 @@
 (function(){
 const COACH_MODE = location.hash.startsWith('#coach=');
 const COACH_TOKEN = COACH_MODE ? location.hash.slice(7).replace(/[^a-z0-9]/g,'') : '';
-const CS = Object.assign({ on:false, pass:'1', vol:0.8, live:'1', beat:false, beepRate:28, plan:'', link:null,
+const CS = Object.assign({ on:false, pass:'1', vol:0.8, live:'1', beat:false, beatMode:'tap', beepRate:28, plan:'', link:null,
   crew:{ boat:'8', names:{} } }, LS.get('sp_cox', {}));
 const saveCS = () => LS.set('sp_cox', CS);
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -26,7 +26,10 @@ css.textContent = `
 .coachmsg{position:fixed;left:8px;right:8px;top:calc(env(safe-area-inset-top) + 46px);z-index:39;background:var(--acc);color:#fff;border-radius:14px;padding:14px 16px;font-size:24px;font-weight:800;display:none}
 .coachmsg.on{display:block}.coachmsg small{display:block;font-size:12px;letter-spacing:1px;opacity:.8}
 .chip{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:800;color:#000;white-space:nowrap}
-.calls{max-height:440px;overflow-y:auto}
+.calls{}
+.cxpanel{position:sticky;top:-12px;z-index:6;margin:-12px -12px 12px;padding:12px 12px 10px;background:var(--bg);border-bottom:1px solid var(--line)}
+.cxpanel canvas{width:100%;height:170px;display:block}
+.cxpanel .seg{margin-bottom:8px}
 .call{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--line);cursor:pointer}
 .call.sel{background:rgba(47,155,255,.12)}
 .call .tm{font-variant-numeric:tabular-nums;color:var(--dim);font-size:13px;min-width:44px;padding-top:2px}
@@ -198,8 +201,11 @@ function showCoachMsg(text){ const p = $c('coachMsg'); p.innerHTML = '<small>COA
 
 /* ================= rate beeper ================= */
 const BT = { next:0, timer:null };
+const beatActive = () => CS.beat && (CS.beatMode !== 'session' || (run && !run.armed));
 function beatTick(){
-  if(!CS.beat || !AC){ return; }
+  if(!AC) return;
+  if(!beatActive()){ BT.next = 0; return; }
+  if(!BT.next) BT.next = AC.currentTime + 0.05;
   const period = 60 / Math.max(10, Math.min(60, +CS.beepRate || 28));
   while(BT.next < AC.currentTime + 0.12){
     if(BT.next < AC.currentTime) BT.next = AC.currentTime + 0.02;
@@ -207,8 +213,10 @@ function beatTick(){
     o.connect(g); g.connect(AC.destination); o.start(BT.next); o.stop(BT.next + 0.07); BT.next += period;
   }
 }
-function beatOff(){ if(!CS.beat) return; CS.beat = false; saveCS(); clearInterval(BT.timer); renderBar(); }
-function beatToggle(){ audioUnlock(); CS.beat = !CS.beat; saveCS(); BT.next = AC ? AC.currentTime + 0.05 : 0; clearInterval(BT.timer); if(CS.beat) BT.timer = setInterval(beatTick, 25); renderBar(); }
+function beatOff(){ if(!CS.beat) return; CS.beat = false; saveCS(); clearInterval(BT.timer); BT.next = 0; renderBar(); }
+/* session ended: 'tap' mode switches off; 'session' mode stays armed for the next session but goes quiet now */
+function beatSessionEnd(){ if(CS.beatMode === 'session'){ BT.next = 0; renderBar(); } else beatOff(); }
+function beatToggle(){ audioUnlock(); CS.beat = !CS.beat; saveCS(); BT.next = 0; clearInterval(BT.timer); if(CS.beat){ BT.timer = setInterval(beatTick, 25); if(CS.beatMode === 'session' && !beatActive()) toast('Beeper ready — it starts when the session starts'); } renderBar(); }
 
 /* ================= cox screen pieces ================= */
 function mountCox(){
@@ -244,7 +252,7 @@ function renderBar(){
   const cb = $c('coxBtn'); if(cb){ cb.textContent = 'COX'; cb.style.background = CS.on ? 'var(--good)' : ''; cb.style.color = CS.on ? '#00210f' : ''; }
   const bar = $c('coxBar'); if(!bar) return; bar.classList.toggle('on', !!CS.on);
   const mic = $c('cbMic'); mic.className = !M.stream ? '' : (M.muted ? 'warn' : 'hot'); mic.textContent = !M.stream ? '🎤 MIC OFF' : (M.muted ? '🔇 MUTED' : (M.recording ? '● REC' : '🎤 MIC ON'));
-  const bt = $c('cbBeat'); bt.className = CS.beat ? 'hot' : ''; bt.textContent = '♪ ' + (CS.beepRate || 28);
+  const bt = $c('cbBeat'); const act = beatActive(); bt.className = act ? 'hot' : (CS.beat ? 'live' : ''); bt.textContent = '♪ ' + (CS.beepRate || 28) + (CS.beat && !act ? ' READY' : '');
   const lv = $c('cbLive'); lv.className = L.listening ? 'live' : ''; lv.textContent = !CS.link ? '📡 NO COACH' : (!L.up ? '📡 OFFLINE' : (L.talking ? '🗣 COACH' : (L.listening ? '🎧 LISTENING' : (L.coaches ? '📡 COACH ON' : '📡 READY'))));
 }
 const BOATS = { '8':['Cox','Stroke','7','6','5','4','3','2','Bow'], '4':['Cox','Stroke','3','2','Bow'] };
@@ -255,7 +263,7 @@ function renderMenuCards(){
     '<div class="crewgrid" style="padding-top:8px">' + seats.map(s => '<span class="muted">' + s + '</span><input data-seat="' + s + '" value="' + esc(CS.crew.names[s] || '') + '" placeholder="Name">').join('') + '</div></div>' +
     (!CS.on ? '' : '<div class="card"><h2>Race Plan Prompts</h2><textarea class="coxin" id="cxPlan" placeholder="500 Settle into rhythm&#10;1000 Power ten — legs&#10;250 to go Sprint!&#10;1:30 Push for two">' + esc(CS.plan) + '</textarea>' +
     '<p class="muted" style="padding-top:8px">One per line. A number is metres into the piece; "250 to go" counts down to the end of a distance piece; 1:30 is time into the piece. The call pops up big on your screen at that point.</p></div>' +
-    '<div class="card"><h2>Rate Beeper</h2><div class="row"><span>Beat (strokes per minute)</span><input type="number" id="cxBeat" min="10" max="60" value="' + (+CS.beepRate || 28) + '"></div><p class="muted" style="padding-top:8px">The ♪ button on the main screen plays a click at this rate through the speakers.</p></div>');
+    '<div class="card"><h2>Rate Beeper</h2><div class="row"><span>Beat (strokes per minute)</span><input type="number" id="cxBeat" min="10" max="60" value="' + (+CS.beepRate || 28) + '"></div><p class="muted" style="padding-top:8px">The ♪ button on the main screen plays a click at this rate through the speakers. Settings › Cox Mode chooses whether it starts when you tap ♪ or waits for the session to start. It always stops when the session stops.</p></div>');
   segBind($c('cxBoat'), CS.crew.boat, v => { CS.crew.boat = v; saveCS(); renderMenuCards(); });
   box.querySelectorAll('[data-seat]').forEach(i => i.addEventListener('change', () => { CS.crew.names[i.dataset.seat] = i.value.trim().slice(0, 40); saveCS(); }));
   if($c('cxPlan')) $c('cxPlan').addEventListener('change', () => { CS.plan = $c('cxPlan').value.slice(0, 2000); saveCS(); });
@@ -269,6 +277,7 @@ function renderSettingsCard(){
     (CS.on ? '<div class="row"><span>Voice to speakers</span><div class="seg" id="cxPass"><button data-v="1">On</button><button data-v="0">Off</button></div></div>' +
     '<div class="row"><span>Speaker volume</span><input type="range" id="cxVol" min="0.2" max="2" step="0.1" value="' + CS.vol + '" style="width:45%"></div>' +
     '<button class="big alt" id="cxTest" style="height:44px;font-size:16px">Mic &amp; speaker check (10 s)</button>' +
+    '<div class="row" style="margin-top:8px"><span>Rate beeper starts</span><div class="seg" id="cxBeatMode"><button data-v="tap">When I tap ♪</button><button data-v="session">When session starts</button></div></div>' +
     '<div class="row" style="margin-top:8px"><span>Coach live (listen &amp; talk-back)</span><div class="seg" id="cxLive"><button data-v="1">On</button><button data-v="0">Off</button></div></div>' +
     '<p class="muted" style="padding:10px 0 4px">Private coach link — only you and whoever has this link can hear recordings and listen live. Don’t share it with the crew.</p>' +
     (link ? '<p class="code" style="font-size:13px;word-break:break-all">' + esc(link) + '</p><button class="big" id="cxShare" style="height:44px;font-size:16px">Send link to coach</button><button class="big alt" id="cxReset" style="height:44px;font-size:16px">Reset link (old link stops working)</button>'
@@ -277,6 +286,7 @@ function renderSettingsCard(){
   segBind($c('cxOn'), CS.on ? '1' : '0', v => { CS.on = v === '1'; saveCS(); renderSettingsCard(); renderMenuCards(); renderAll(); if(CS.on) liveConnect(); else liveClose(); toast(CS.on ? 'Cox mode on' : 'Cox mode off'); });
   if(!CS.on) return;
   segBind($c('cxPass'), CS.pass, v => { CS.pass = v; saveCS(); setPass(); renderSettingsCard(); });
+  segBind($c('cxBeatMode'), CS.beatMode, v => { CS.beatMode = v; saveCS(); BT.next = 0; renderSettingsCard(); renderBar(); });
   segBind($c('cxLive'), CS.live, v => { CS.live = v; saveCS(); renderSettingsCard(); if(v === '1') liveConnect(); else liveClose(); });
   $c('cxVol').oninput = () => { CS.vol = +$c('cxVol').value; saveCS(); setPass(); };
   $c('cxTest').onclick = async () => { const had = !!M.stream, pass = CS.pass; CS.pass = '1'; if(!(await micOn())){ CS.pass = pass; return; } M.muted = false; setPass(); toast('Talk now — you should hear yourself in the speakers'); setTimeout(() => { CS.pass = pass; setPass(); if(!had && !run) micOff(); }, 10000); };
@@ -293,9 +303,9 @@ async function sessionStart(){
   if(await micOn()){ recStart(); renderBar(); }
   PL.sid = null; liveConnect();
 }
-function sessionCancel(){ beatOff(); if(M.recording){ const rec = M.recId; recStop().then(() => idbDelRec(rec)); } }
+function sessionCancel(){ beatSessionEnd(); if(M.recording){ const rec = M.recId; recStop().then(() => idbDelRec(rec)); } }
 function sessionStop(r){
-  beatOff();
+  beatSessionEnd();
   if(Object.values(CS.crew.names || {}).some(n => n)) r.crew = { boat:CS.crew.boat, names:Object.assign({}, CS.crew.names) };
   if(!CS.on) return;
   if(!M.recording) return;
@@ -326,7 +336,7 @@ async function syncAudio(){
 function deleteLocal(id){ const data = LS.get('sp_s_' + id, null); const pend = LS.get('sp_audio_pend', []).filter(p => p.sid !== id); LS.set('sp_audio_pend', pend); return data && data.cox ? idbDelRec(data.cox.rec).catch(() => {}) : null; }
 
 /* ================= analysis (used by the cox's History and the coach view) ================= */
-function canvasFast(c){ const r = window.devicePixelRatio || 1, w = c.clientWidth, h = +c.getAttribute('height');
+function canvasFast(c){ const r = window.devicePixelRatio || 1, w = c.clientWidth, h = +(c.dataset.h || (c.dataset.h = c.getAttribute('height')));
   if(c.width !== Math.round(w * r) || c.height !== Math.round(h * r)){ c.width = Math.round(w * r); c.height = Math.round(h * r); c.style.height = h + 'px'; }
   const x = c.getContext('2d'); x.setTransform(r, 0, 0, r, 0, 0); x.clearRect(0, 0, w, h); return [x, w, h]; }
 function sampleAt(smp, t){ let lo = 0, hi = smp.length - 1; if(hi < 0) return null; while(lo < hi){ const m = (lo + hi) >> 1; if(smp[m][0] < t) lo = m + 1; else hi = m; } return smp[lo]; }
@@ -358,6 +368,8 @@ function fxHtml(c){ if(c.dSplit == null) return '<span class="muted">—</span>'
 async function renderAnalysis(box, opts){
   const { data, sid, getChunks, getAudio, retx } = opts;
   box.innerHTML = '<div class="card"><h2>Cox Calls</h2><p class="muted" id="cxaStat">Loading the recording…</p></div>';
+  const anchor = box.closest('#coxBox') || box, host = document.createElement('div');
+  host.className = 'cxpanel'; host.style.display = 'none'; anchor.parentNode.insertBefore(host, anchor);
   let chunks = [], tries = 0;
   const load = async () => {
     try{ chunks = await getChunks(); }catch(e){ $c('cxaStat') && ($c('cxaStat').textContent = 'Recording not available offline yet — it will appear once it has uploaded.'); return; }
@@ -378,19 +390,21 @@ async function renderAnalysis(box, opts){
     const scroller = box.closest('.body'), keepTop = scroller ? scroller.scrollTop : 0;
     const A = analyse(data, chunks), smp = data.samples || [];
     const pct = A.T ? Math.round(A.talk / A.T * 100) : 0, failed = chunks.filter(c => c.status === 'error' || c.status === 'no_ai').length;
+    const hasTrack = smp.some(s => s[1] != null);
+    const panelHtml = (hasTrack ? '<div class="seg" id="cxaView"><button data-v="chart">Split &amp; rate</button><button data-v="course">Course</button></div>' : '') +
+      '<canvas id="cxaChart" height="170"></canvas>' + (hasTrack ? '<canvas id="cxaTrack" height="170" style="display:none"></canvas>' : '') +
+      '<div class="player"><button id="cxaPlay">▶</button><input type="range" id="cxaPos" min="0" max="' + Math.max(1, Math.ceil(A.T)) + '" step="1" value="0"><span class="pt" id="cxaPT">0:00</span></div>';
     let h = '<div class="card"><h2>Cox Calls</h2>' + (chunks.some(c => c.status === 'new' || c.status === 'local') ? '<p class="muted" id="cxaStat">' + (chunks.some(c => c.status === 'local') ? 'Uploading the recording — transcript follows.' : 'Still transcribing — more calls will appear.') + '</p>' : '') +
       (failed ? '<p class="muted">' + failed + ' minute(s) couldn’t be transcribed, but the audio is still here to play.</p>' : '') +
       '<div class="grid3">' + stat('Calls', A.calls.length) + stat('Talk time', pct + '%') + stat('Longest quiet', fmtTime(A.longest)) + '</div>' +
-      '<canvas id="cxaChart" height="210" style="margin-top:12px"></canvas>' +
-      '<p class="muted" style="margin-top:6px">Lines: <span style="color:var(--acc)">■</span> split (higher = faster) <span style="color:var(--warn)">■</span> rate. Ticks = calls, coloured by type. Tap the chart to jump there.</p>' +
-      '<div class="player"><button id="cxaPlay">▶</button><input type="range" id="cxaPos" min="0" max="' + Math.max(1, Math.ceil(A.T)) + '" step="1" value="0"><span class="pt" id="cxaPT">0:00</span></div></div>';
+      '<p class="muted" style="margin-top:8px">The panel above stays put while you scroll. Chart: <span style="color:var(--acc)">■</span> split (higher = faster) <span style="color:var(--warn)">■</span> rate, ticks = calls. Tap the chart or any call to listen from there.</p></div>';
     if(A.cats.length) h += '<div class="card"><h2>What each type of call did</h2><table><tr><th>Type</th><th>Calls</th><th>Split after</th><th>Rate after</th></tr>' +
       A.cats.map(c => '<tr><td><span class="chip" style="background:' + c.c + '">' + c.k + '</span></td><td>' + c.n + '</td><td>' + (c.m ? sgn(c.ds / c.m, 1) + 's' : '—') + '</td><td>' + (c.m ? sgn(c.dr / c.m, 1) : '—') + '</td></tr>').join('') +
       '</table><p class="muted" style="margin-top:8px">Average change in the 20 s after a call vs the 20 s before. Negative split = boat got faster. One session is a hint, not proof — look for patterns over several.</p></div>';
     if(A.best.length) h += '<div class="card"><h2>Calls that moved the boat most</h2>' + A.best.map(c => callRow(c)).join('') + '</div>';
     h += '<div class="card"><h2>Every call</h2><div class="calls" id="cxaList">' + (A.calls.length ? A.calls.map(c => callRow(c)).join('') : '<p class="muted">No calls transcribed yet.</p>') + '</div></div>';
     if(A.top.length) h += '<div class="card"><h2>Most used</h2>' + A.top.map(([p, n]) => '<div class="row"><span>“' + esc(p) + '”</span><b>' + n + '×</b></div>').join('') + '</div>';
-    if(smp.some(s => s[1] != null)) h += '<div class="card"><h2>Course replay</h2><canvas id="cxaTrack" height="260"></canvas><p class="muted" style="margin-top:6px">Press ▶ above to hear the cox while the dot follows the boat.</p></div>';
+    host.innerHTML = panelHtml; host.style.display = 'block';
     box.innerHTML = h;
     if(scroller) scroller.scrollTop = keepTop;
     wire(A, smp);
@@ -411,7 +425,7 @@ async function renderAnalysis(box, opts){
   }
   P.audio.addEventListener('timeupdate', () => { if(P.cur){ P.t = P.cur.t0 + P.audio.currentTime; ui(); } });
   P.audio.addEventListener('ended', () => { if(!P.cur) return; const next = chunks.find(c => c.idx === P.cur.idx + 1); if(next && P.playing) playAt(next.t0); else { P.playing = false; ui(true); if(pendingDraw) draw(); } });
-  let A0 = null, smp0 = [];
+  let A0 = null, smp0 = [], view = 'chart';
   let uiT = 0;
   function ui(force){
     const b = $c('cxaPlay'); if(!b) { P.audio.pause(); return; }
@@ -421,7 +435,7 @@ async function renderAnalysis(box, opts){
     document.querySelectorAll('#cxaList .call').forEach(el => { const t = +el.dataset.t, on = P.t >= t - 0.2 && P.t < t + 4; if(el.classList.contains('sel') !== on) el.classList.toggle('sel', on); });
   }
   function drawTimeline(){
-    const c = $c('cxaChart'); if(!c || !A0) return; const [x, w, h] = canvasFast(c); const T = A0.T || 1;
+    const c = $c('cxaChart'); if(!c || !A0 || view !== 'chart') return; const [x, w, h] = canvasFast(c); const T = A0.T || 1;
     const vs = smp0.map(s => s[4]).filter(v => v > 0.3), vMax = Math.max(1, ...vs), vMin = Math.max((+S.splitBase) / 300, Math.min(vMax * 0.6, ...vs)), rMax = Math.max(40, ...smp0.map(s => s[5]));
     x.fillStyle = cssVar('--line'); smp0.forEach(s => { if(s[7]) x.fillRect(s[0] / T * w, 0, Math.max(1, w / T), h); });
     const line = (col, fy) => { x.strokeStyle = col; x.lineWidth = 2; x.beginPath(); let st = false; smp0.forEach(s => { const y = fy(s); if(y == null){ st = false; return; } const px = s[0] / T * w; if(!st){ x.moveTo(px, y); st = true; } else x.lineTo(px, y); }); x.stroke(); };
@@ -431,7 +445,7 @@ async function renderAnalysis(box, opts){
     x.strokeStyle = cssVar('--fg'); x.lineWidth = 1; x.beginPath(); x.moveTo(P.t / T * w, 0); x.lineTo(P.t / T * w, h); x.stroke();
   }
   function drawTrack(){
-    const c = $c('cxaTrack'); if(!c) return; const pts = smp0.filter(s => s[1] != null); if(pts.length < 2) return;
+    const c = $c('cxaTrack'); if(!c || view !== 'course') return; const pts = smp0.filter(s => s[1] != null); if(pts.length < 2) return;
     const [x, w, h] = canvasFast(c); const k = Math.cos(pts[0][1] * Math.PI / 180);
     const minX = Math.min(...pts.map(p => p[2])) * k, maxX = Math.max(...pts.map(p => p[2])) * k, minY = Math.min(...pts.map(p => p[1])), maxY = Math.max(...pts.map(p => p[1]));
     const sc = Math.min((w - 20) / ((maxX - minX) || 1e-6), (h - 20) / ((maxY - minY) || 1e-6)), ox = (w - (maxX - minX) * sc) / 2, oy = (h - (maxY - minY) * sc) / 2;
@@ -442,6 +456,8 @@ async function renderAnalysis(box, opts){
   }
   function wire(A, smp){
     A0 = A; smp0 = smp;
+    const setView = v => { view = v; $c('cxaChart').style.display = v === 'chart' ? 'block' : 'none'; if($c('cxaTrack')) $c('cxaTrack').style.display = v === 'course' ? 'block' : 'none'; if($c('cxaView')) segBind($c('cxaView'), v, setView); ui(true); };
+    setView(view);
     $c('cxaPlay').onclick = () => { if(P.playing){ P.audio.pause(); P.playing = false; ui(true); if(pendingDraw) draw(); } else playAt(P.t); };
     $c('cxaPos').onchange = () => { P.t = +$c('cxaPos').value; if(P.playing) playAt(P.t); else ui(true); };
     $c('cxaChart').onclick = e => { const r = e.target.getBoundingClientRect(); P.t = (e.clientX - r.left) / r.width * (A.T || 1); playAt(P.t); };
@@ -555,7 +571,8 @@ if(COACH_MODE){ coachMount(); return; }
 mountCox(); renderBar();
 setInterval(() => { planTick(); if(CS.on) renderBar(); }, 250);
 setInterval(telemetry, 1000);
-if(CS.beat && CS.on){ CS.beat = false; saveCS(); }
+if(CS.beat && CS.beatMode !== 'session'){ CS.beat = false; saveCS(); }
+if(CS.beat) BT.timer = setInterval(beatTick, 25);
 window.addEventListener('online', () => liveConnect());
 document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible') liveConnect(); });
 setTimeout(liveConnect, 1500);
