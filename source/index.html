@@ -784,12 +784,20 @@ window.addEventListener('beforeunload', saveLive);
 const APP_BUILD='__BUILD__', APP_LABEL='__LABEL__';
 let swWaiting=null, wantReload=false;
 function showUpdate(w){ swWaiting=w; $('upd').classList.toggle('on', !run); }
-$('updBtn').onclick=()=>{ if(run){ toast('Finish your session first'); return; } if(swWaiting){ wantReload=true; swWaiting.postMessage('skipWaiting'); } else location.reload(); };
+/* Update now: always use the newest waiting version; if anything is stuck, clear the old copy and load fresh */
+async function hardReload(){ try{ const ks=await caches.keys(); await Promise.all(ks.map(k=>caches.delete(k))); const regs=await navigator.serviceWorker.getRegistrations(); await Promise.all(regs.map(r=>r.unregister())); }catch(e){} location.reload(); }
+$('updBtn').onclick=async()=>{
+  if(run){ toast('Finish your session first'); return; }
+  $('updBtn').textContent='Updating…'; wantReload=true;
+  setTimeout(hardReload, 4000);   // safety net if the phone doesn't switch over by itself
+  try{ const reg=await navigator.serviceWorker.getRegistration(); if(reg){ await reg.update().catch(()=>{}); const w=reg.waiting||swWaiting; if(w && w.state!=='redundant'){ w.postMessage('skipWaiting'); return; } } }catch(e){}
+  hardReload();
+};
 if('serviceWorker' in navigator && location.protocol==='https:'){
   navigator.serviceWorker.register('/sw.js').then(reg=>{
     if(reg.waiting && navigator.serviceWorker.controller) showUpdate(reg.waiting);
     reg.addEventListener('updatefound',()=>{ const w=reg.installing; if(!w) return;
-      w.addEventListener('statechange',()=>{ if(w.state==='installed' && navigator.serviceWorker.controller) showUpdate(w); }); });
+      w.addEventListener('statechange',()=>{ if(w.state==='installed' && navigator.serviceWorker.controller) showUpdate(w); if(w.state==='redundant' && swWaiting===w) swWaiting=reg.waiting||null; }); });
     document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible' && !run) reg.update().catch(()=>{}); });
     setInterval(()=>{ if(!run) reg.update().catch(()=>{}); }, 15*60*1000);
   }).catch(()=>{});

@@ -210,6 +210,15 @@ function beatToggle(){ audioUnlock(); CS.beat = !CS.beat; saveCS(); BT.next = AC
 
 /* ================= cox screen pieces ================= */
 function mountCox(){
+  // Cox mode switch on the main screen, beside the brightness button
+  const cb = document.createElement('button'); cb.className = 'iconbtn'; cb.id = 'coxBtn'; cb.style.fontWeight = '800';
+  $c('sunBtn').parentNode.insertBefore(cb, $c('sunBtn'));
+  cb.onclick = () => {
+    if(run){ toast('Stop the session first, then switch Cox mode'); return; }
+    CS.on = !CS.on; saveCS(); renderAll(); renderSettingsCard(); renderMenuCards();
+    if(CS.on) liveConnect(); else { liveClose(); if(!CS.beat) micOff(); }
+    toast(CS.on ? 'Cox mode on' : 'Cox mode off');
+  };
   const live = $c('scr-live');
   const bar = document.createElement('div'); bar.className = 'coxbar'; bar.id = 'coxBar';
   bar.innerHTML = '<button id="cbMic">🎤 MIC</button><button id="cbBeat">♪</button><button id="cbLive">📡</button>';
@@ -225,6 +234,7 @@ function mountCox(){
   const help = document.querySelector('#scr-help .card'); help.insertAdjacentHTML('beforeend', '<br><p><b>Cox mode:</b> turn it on in Settings. Plug a headset mic into the phone. Your voice goes to the boat speakers (wired system or Bluetooth speaker) and is recorded with the boat data. After the session, History shows every call with what the boat did next. Only the cox and anyone with the private coach link can hear recordings.</p><br><p><b>Wireless speakers:</b> pair the phone with one Auracast-enabled JBL speaker, then link more JBL Auracast speakers to it with their Auracast button. Put them at bow, middle and stern.</p><br><p><b>Coach talk-back</b> plays through the boat speakers, so the whole crew hears the coach. Coach text messages show only on the cox’s screen.</p><br><p><b>Check</b> (experimental) is how hard the boat slows at each catch, from the phone’s motion sensor. Lower is better.</p>');
 }
 function renderBar(){
+  const cb = $c('coxBtn'); if(cb){ cb.textContent = 'COX'; cb.style.background = CS.on ? 'var(--good)' : ''; cb.style.color = CS.on ? '#00210f' : ''; }
   const bar = $c('coxBar'); if(!bar) return; bar.classList.toggle('on', !!CS.on);
   const mic = $c('cbMic'); mic.className = !M.stream ? '' : (M.muted ? 'warn' : 'hot'); mic.textContent = !M.stream ? '🎤 MIC OFF' : (M.muted ? '🔇 MUTED' : (M.recording ? '● REC' : '🎤 LIVE'));
   const bt = $c('cbBeat'); bt.className = CS.beat ? 'hot' : ''; bt.textContent = '♪ ' + (CS.beepRate || 28);
