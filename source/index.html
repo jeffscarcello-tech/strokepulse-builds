@@ -240,7 +240,7 @@ function fmtTime(sec, tenths){ if(!isFinite(sec)||sec<0) sec=0; const h=Math.flo
   const ss = tenths ? s.toFixed(1).padStart(4,'0') : pad(Math.floor(s));
   return h ? h+':'+pad(m)+':'+ss : m+':'+ss; }
 function splitSec(v){ return v>0.3 ? (+S.splitBase)/v : null; }
-function fmtSplit(v){ const s=splitSec(v); if(s==null || s>3599) return '–:––'; return fmtTime(s,true); }
+function fmtSplit(v, whole){ const s=splitSec(v); if(s==null || s>3599) return '–:––'; return whole ? fmtTime(Math.round(s),false) : fmtTime(s,true); }
 const splitLabel = () => S.splitBase==='500' ? '/500m' : S.splitBase==='1000' ? '/km' : '/mi';
 const imp = () => S.units==='imperial';
 function fmtDist(m){ if(imp()){ const mi=m/1609.344; return mi<10? mi.toFixed(2) : mi.toFixed(1); } return m<10000 ? Math.round(m).toString() : (m/1000).toFixed(2); }
@@ -492,7 +492,7 @@ const METRICS = {
   time:    {lab:()=>pre('Time','Time'), unit:()=>'', val:()=>fmtTime(curTime())},
   totDist: {lab:'Total Dist', unit:()=>distUnit(run?run.dist:0), val:()=>fmtDist(run?run.dist:0)},
   totTime: {lab:'Total Time', unit:()=>'', val:()=>fmtTime(elapsed())},
-  avgSplit:{lab:()=>pre('Avg','Avg Split'), unit:()=>splitLabel(), val:()=>{ const t=curTime(), d=curDist(); return t>0&&d>5 ? fmtSplit(d/t) : '–:––'; }},
+  avgSplit:{lab:()=>pre('Avg','Avg Split'), unit:()=>splitLabel(), val:()=>{ const t=curTime(), d=curDist(); return t>0&&d>5 ? fmtSplit(d/t, true) : '–:––'; }},
   avgRate: {lab:()=>pre('Avg Rate','Avg Rate'), unit:()=>'spm', val:()=>{ const t=curTime(), s=curStrokes(); return t>5 ? (s/t*60).toFixed(1) : '0'; }},
   dps:     {lab:'Dist / Stroke', unit:()=>imp()?'ft':'m', val:()=>{ const r=currentRate(nowSecMotion()); if(r<5||curV()<0.3) return '0.0'; const d=curV()/(r/60); return imp()?(d*3.28084).toFixed(1):d.toFixed(1); }},
   strokes: {lab:()=>pre('Strokes','Strokes'), unit:()=>'', val:()=>String(curStrokes())},
@@ -531,10 +531,16 @@ function pickField(i){
   openSheet('<h2 style="margin-bottom:8px">Show in this box</h2>'+METRIC_ORDER.map(k=>'<button class="opt'+(S.fields[i]===k?' on':'')+'" data-k="'+k+'">'+lab(METRICS[k])+'</button>').join(''),
     el=>{ el.querySelectorAll('.opt').forEach(b=>b.onclick=()=>{ S.fields[i]=b.dataset.k; saveSettings(); closeSheet(); renderLive(); }); });
 }
+const HOLD={avgSplit:5000, avgRate:5000, split:1000, speed:1000, dps:1000, check:2000};
+const fieldCache=[];
 function renderLive(){
   const boxes=$('fields').children;
-  for(let i=0;i<boxes.length;i++){ const m=METRICS[S.fields[i]]; const b=boxes[i];
-    b.children[0].textContent=lab(m); b.children[1].textContent=m.unit(); b.children[2].textContent=m.val();
+  const now=Date.now();
+  for(let i=0;i<boxes.length;i++){ const key=S.fields[i], m=METRICS[key]; const b=boxes[i];
+    // steady numbers: averages change every 5 s, live split/speed once a second (time and distance stay live)
+    const hold=HOLD[key]||0, c=fieldCache[i];
+    let v; if(hold && c && c.key===key && now-c.t<hold && !!run===c.run) v=c.v; else { v=m.val(); fieldCache[i]={key,v,t:now,run:!!run}; }
+    b.children[0].textContent=lab(m); b.children[1].textContent=m.unit(); b.children[2].textContent=v;
     const [st,tag]=targetState(S.fields[i]); b.classList.toggle('ok',st==='ok'); b.classList.toggle('off',st==='off'); b.children[3].textContent=tag; }
   // status
   const age=(Date.now()-gps.lastFix)/1000;
