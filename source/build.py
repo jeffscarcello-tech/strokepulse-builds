@@ -26,6 +26,7 @@ app = { 'app': 'strokepulse', 'build': build, 'label': label, 'html': html, 'sw'
             '/analytics.js': { 'type': 'application/javascript; charset=utf-8', 'b64': base64.b64encode(sub(open(os.path.join(here, 'analytics.js')).read()).encode()).decode() },
             '/train.js': { 'type': 'application/javascript; charset=utf-8', 'b64': base64.b64encode(sub(open(os.path.join(here, 'train.js')).read()).encode()).decode() },
             '/leaflet.js': { 'type': 'application/javascript; charset=utf-8', 'b64': base64.b64encode(open(os.path.join(here, 'vendor', 'leaflet.js'), 'rb').read()).decode() },
+            '/inter-900.woff': { 'type': 'font/woff', 'b64': base64.b64encode(open(os.path.join(here, 'vendor', 'inter-900.woff'), 'rb').read()).decode() },
             '/leaflet.css': { 'type': 'text/css; charset=utf-8', 'b64': base64.b64encode(open(os.path.join(here, 'vendor', 'leaflet.css'), 'rb').read()).decode() } } }
 json.dump(app, open(os.path.join(out, 'app.json'), 'w'))
 open(os.path.join(out, 'build.txt'), 'w').write(build + '\n')

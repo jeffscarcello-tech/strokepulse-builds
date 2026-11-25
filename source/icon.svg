@@ -1,8 +1,19 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#05070a"/>
-  <path d="M60 330 Q130 290 200 330 T340 330 T452 330" fill="none" stroke="#2f9bff" stroke-width="26" stroke-linecap="round"/>
-  <path d="M60 395 Q130 355 200 395 T340 395 T452 395" fill="none" stroke="#2f9bff" stroke-opacity=".55" stroke-width="22" stroke-linecap="round"/>
-  <path d="M96 268 L416 268 L380 240 L132 240 Z" fill="#f4f7fa"/>
-  <path d="M150 300 L330 120" stroke="#2ed47a" stroke-width="20" stroke-linecap="round"/>
-  <rect x="300" y="78" width="70" height="34" rx="10" transform="rotate(-45 335 95)" fill="#2ed47a"/>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0f2236"/><stop offset="1" stop-color="#050a12"/></linearGradient>
+    <linearGradient id="bl" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5ab8ff"/><stop offset="1" stop-color="#1f74ff"/></linearGradient>
+    <linearGradient id="or" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffbf4d"/><stop offset="1" stop-color="#ff8a00"/></linearGradient>
+    <filter id="glow" x="-20%" y="-50%" width="140%" height="200%"><feGaussianBlur stdDeviation="7" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <!-- crossed oars -->
+  <g stroke-linecap="round">
+    <line x1="150" y1="326" x2="340" y2="136" stroke="#e8eef5" stroke-width="14"/>
+    <line x1="362" y1="326" x2="172" y2="136" stroke="#e8eef5" stroke-width="14"/>
+  </g>
+  <g transform="translate(366 110) rotate(45)" fill="url(#bl)"><path d="M-6 50 C-14 30 -30 6 -36 -28 C-39 -50 -34 -72 -26 -86 C-8 -84 14 -80 30 -70 C34 -40 28 -6 6 50 Z"/><rect x="-11" y="52" width="22" height="9" rx="3" fill="#e8eef5"/></g>
+  <g transform="translate(146 110) rotate(-45) scale(-1 1)" fill="url(#or)"><path d="M-6 50 C-14 30 -30 6 -36 -28 C-39 -50 -34 -72 -26 -86 C-8 -84 14 -80 30 -70 C34 -40 28 -6 6 50 Z"/><rect x="-11" y="52" width="22" height="9" rx="3" fill="#e8eef5"/></g>
+  <!-- pulse line -->
+  <path d="M64 392 H196 L222 340 L254 446 L284 360 L302 392 H430" fill="none" stroke="#2f9bff" stroke-width="15" stroke-linejoin="round" stroke-linecap="round" filter="url(#glow)"/>
+  <circle cx="446" cy="392" r="15" fill="#fff"/>
 </svg>

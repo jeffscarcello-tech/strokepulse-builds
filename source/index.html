@@ -118,6 +118,21 @@ canvas{width:100%;display:block;border-radius:8px;background:var(--bg)}
 /* pop-up messages sit just under the status bar and never block taps */
 .toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 44px);transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:8px 14px;border-radius:10px;font-weight:700;font-size:15px;display:none;z-index:30;max-width:92%;text-align:center;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.35)}
 
+
+/* ===== brand (v3.14): logo + StrokePulse wordmark on every screen except the rowing screen ===== */
+@font-face{font-family:'SPBrand';font-style:normal;font-weight:900;font-display:swap;src:url(/inter-900.woff?v=__BUILD__) format('woff')}
+.wm{font-family:'SPBrand',-apple-system,BlinkMacSystemFont,sans-serif;font-weight:900;letter-spacing:-.02em;white-space:nowrap}
+.wm b{font-weight:900;color:#4aa8ff}.wm i{font-style:normal;color:#ff9f1c}
+body.glare .wm b{color:#1565d8}body.glare .wm i{color:#c96a00}
+body.night .wm b,body.night .wm i{color:var(--fg)}
+.brandbar{display:flex;align-items:center;justify-content:center;gap:8px;padding:8px 12px 2px;cursor:pointer}
+.brandbar img{width:24px;height:24px;border-radius:6px}
+.brandbar .wm{font-size:17px}
+.hero{display:flex;align-items:center;gap:14px;padding:6px 4px 16px}
+.hero img{width:64px;height:64px;border-radius:15px;box-shadow:0 8px 22px rgba(0,0,0,.45)}
+.hero .wm{font-size:31px;line-height:1}
+.hero .tag{color:var(--dim);font-size:13px;font-weight:600;margin-top:5px;letter-spacing:.3px}
+
 /* ===== look & feel (v3.3) ===== */
 :root{--hot:#ff9f1c;--r:16px;--card:linear-gradient(180deg,#121922 0%,#0d1218 100%);--edge:rgba(255,255,255,.06)}
 body.glare{--hot:#b85600;--card:var(--panel);--edge:var(--line)}
@@ -186,6 +201,7 @@ body.glare .tiles button{box-shadow:none}
 <section class="screen" id="scr-menu">
   <div class="top"><button class="iconbtn" data-go="live">‹ Back</button><h1>Menu</h1><span id="mChip"></span></div>
   <div class="body">
+    <div class="hero"><img src="/icon.svg?v=__BUILD__" alt=""><div><div class="wm"><b>Stroke</b><i>Pulse</i></div><div class="tag">Speed coach · Cox box · Training</div></div></div>
     <div class="tiles"><button data-go="history"><span>📋</span>History</button><button id="mProg"><span>📈</span>Progress<small>Goals · Trophies</small></button><button data-go="settings"><span>⚙️</span>Settings</button></div>
     <div class="card"><h2>Rower</h2>
       <div class="row"><span>Weight <span class="muted" style="font-weight:400">(for calories)</span></span><span><input id="stWeight" type="number" inputmode="decimal" class="numin"> <span id="stWUnit" class="muted"></span></span></div>
@@ -697,7 +713,10 @@ function askStop(){
 setInterval(()=>{ workoutTick(); sampleTick(); if($('scr-live').classList.contains('on')) renderLive(); if($('bLap')){ $('bLap').textContent = run&&run.wk.mode==='intervals'&&run.phase==='rest' ? 'GO NOW' : 'LAP'; } }, 250);
 
 /* ---------- navigation ---------- */
-function go(name){ if(window.ANA && name!=='history') ANA.leaving(); document.querySelectorAll('.screen').forEach(s=>s.classList.remove('on')); $('scr-'+name).classList.add('on');
+/* brand bar above the title on every screen except the rowing screen (and the Menu, which has its own header) */
+function brandBar(sec){ if(!sec || sec.id === 'scr-live' || sec.id === 'scr-menu' || sec.querySelector('.brandbar')) return; const top = sec.querySelector('.top'); if(!top) return;
+  const b = document.createElement('div'); b.className = 'brandbar'; b.innerHTML = '<img src="/icon.svg?v=__BUILD__" alt=""><span class="wm"><b>Stroke</b><i>Pulse</i></span>'; b.onclick = () => go('menu'); sec.insertBefore(b, top); }
+function go(name){ brandBar(document.getElementById('scr-'+name)); if(window.ANA && name!=='history') ANA.leaving(); document.querySelectorAll('.screen').forEach(s=>s.classList.remove('on')); $('scr-'+name).classList.add('on');
   if(name==='menu') renderMenu(); if(name==='settings') renderSettings(); if(name==='history') renderHistory(); }
 document.addEventListener('click',e=>{ const g=e.target.closest('[data-go]'); if(g) go(g.dataset.go); });
 $('menuBtn').onclick=()=>go('menu');
