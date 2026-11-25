@@ -3,7 +3,7 @@
 GPS speed coach web app for iPhone (rowing / paddling), like the NK SpeedCoach GPS.
 
 ## Current build
-- Test: **sp-20261124i** (v2.3) — reliable Update now (uses newest waiting version, hard refresh fallback), COX switch on main screen. Previous: sp-20261124h (v2.2) — instant Cox mode switch, tidy settings layout. Previous: sp-20261124g (v2.1) — solid status bar (no top fade), no page bounce. Previous: sp-20261124f (v2.0) — Cox mode: mic→speakers, recording + transcripts + call analysis, coach link (private), live listen/talk-back/messages, race-plan prompts, rate beeper, check factor, crew list
+- Test: **sp-20261124j** (v2.4) — crew roster always in Menu and saved with every session. Previous: sp-20261124i (v2.3) — reliable Update now (uses newest waiting version, hard refresh fallback), COX switch on main screen. Previous: sp-20261124h (v2.2) — instant Cox mode switch, tidy settings layout. Previous: sp-20261124g (v2.1) — solid status bar (no top fade), no page bounce. Previous: sp-20261124f (v2.0) — Cox mode: mic→speakers, recording + transcripts + call analysis, coach link (private), live listen/talk-back/messages, race-plan prompts, rate beeper, check factor, crew list
 - Live: not set up yet (test site first)
 
 ## Resources (StrokePulse owns only these)

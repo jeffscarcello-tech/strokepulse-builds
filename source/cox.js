@@ -243,17 +243,16 @@ function renderBar(){
 const BOATS = { '8':['Cox','Stroke','7','6','5','4','3','2','Bow'], '4':['Cox','Stroke','3','2','Bow'] };
 function renderMenuCards(){
   const box = $c('coxMenu'); if(!box) return;
-  if(!CS.on){ box.innerHTML = ''; return; }
   const seats = BOATS[CS.crew.boat] || BOATS['8'];
-  box.innerHTML = '<div class="card"><h2>Crew</h2><div class="row"><span>Boat</span><div class="seg" id="cxBoat"><button data-v="4">Coxed 4</button><button data-v="8">Eight</button></div></div>' +
+  box.innerHTML = '<div class="card"><h2>Crew Roster</h2><div class="row"><span>Boat</span><div class="seg" id="cxBoat"><button data-v="4">Coxed 4</button><button data-v="8">Eight</button></div></div>' +
     '<div class="crewgrid" style="padding-top:8px">' + seats.map(s => '<span class="muted">' + s + '</span><input data-seat="' + s + '" value="' + esc(CS.crew.names[s] || '') + '" placeholder="Name">').join('') + '</div></div>' +
-    '<div class="card"><h2>Race Plan Prompts</h2><textarea class="coxin" id="cxPlan" placeholder="500 Settle into rhythm&#10;1000 Power ten — legs&#10;250 to go Sprint!&#10;1:30 Push for two">' + esc(CS.plan) + '</textarea>' +
+    (!CS.on ? '' : '<div class="card"><h2>Race Plan Prompts</h2><textarea class="coxin" id="cxPlan" placeholder="500 Settle into rhythm&#10;1000 Power ten — legs&#10;250 to go Sprint!&#10;1:30 Push for two">' + esc(CS.plan) + '</textarea>' +
     '<p class="muted" style="padding-top:8px">One per line. A number is metres into the piece; "250 to go" counts down to the end of a distance piece; 1:30 is time into the piece. The call pops up big on your screen at that point.</p></div>' +
-    '<div class="card"><h2>Rate Beeper</h2><div class="row"><span>Beat (strokes per minute)</span><input type="number" id="cxBeat" min="10" max="60" value="' + (+CS.beepRate || 28) + '"></div><p class="muted" style="padding-top:8px">The ♪ button on the main screen plays a click at this rate through the speakers.</p></div>';
+    '<div class="card"><h2>Rate Beeper</h2><div class="row"><span>Beat (strokes per minute)</span><input type="number" id="cxBeat" min="10" max="60" value="' + (+CS.beepRate || 28) + '"></div><p class="muted" style="padding-top:8px">The ♪ button on the main screen plays a click at this rate through the speakers.</p></div>');
   segBind($c('cxBoat'), CS.crew.boat, v => { CS.crew.boat = v; saveCS(); renderMenuCards(); });
   box.querySelectorAll('[data-seat]').forEach(i => i.addEventListener('change', () => { CS.crew.names[i.dataset.seat] = i.value.trim().slice(0, 40); saveCS(); }));
-  $c('cxPlan').addEventListener('change', () => { CS.plan = $c('cxPlan').value.slice(0, 2000); saveCS(); });
-  $c('cxBeat').addEventListener('change', () => { CS.beepRate = Math.max(10, Math.min(60, parseInt($c('cxBeat').value) || 28)); saveCS(); renderBar(); });
+  if($c('cxPlan')) $c('cxPlan').addEventListener('change', () => { CS.plan = $c('cxPlan').value.slice(0, 2000); saveCS(); });
+  if($c('cxBeat')) $c('cxBeat').addEventListener('change', () => { CS.beepRate = Math.max(10, Math.min(60, parseInt($c('cxBeat').value) || 28)); saveCS(); renderBar(); });
 }
 function renderSettingsCard(){
   const box = $c('coxSettings'); if(!box) return;
@@ -289,8 +288,8 @@ async function sessionStart(){
 }
 function sessionCancel(){ if(M.recording){ const rec = M.recId; recStop().then(() => idbDelRec(rec)); } }
 function sessionStop(r){
+  if(Object.values(CS.crew.names || {}).some(n => n)) r.crew = { boat:CS.crew.boat, names:Object.assign({}, CS.crew.names) };
   if(!CS.on) return;
-  r.crew = { boat:CS.crew.boat, names:Object.assign({}, CS.crew.names) };
   if(!M.recording) return;
   r.cox = { rec:M.recId };
   recStop().then(meta => {
