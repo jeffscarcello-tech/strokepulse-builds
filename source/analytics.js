@@ -32,6 +32,7 @@ tr.best td{color:var(--good);font-weight:800}
 .wx b{color:var(--fg)}
 .pb{display:inline-block;background:#ffd400;color:#000;font-size:11px;font-weight:900;padding:1px 6px;border-radius:999px;margin-left:4px;vertical-align:middle}
 .notes{width:100%;min-height:64px;margin-top:10px;padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font:inherit;font-size:15px}
+.htool{flex:1;min-width:0;height:46px;border-radius:12px;background:var(--card,var(--panel));border:1px solid var(--edge,var(--line));color:var(--fg);font-weight:800;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 10px}
 .cmpbar{position:fixed;left:10px;right:10px;bottom:calc(10px + env(safe-area-inset-bottom));z-index:20;display:none;gap:8px}
 .cmpbar.on{display:flex}
 .cmpbar button{flex:1;height:56px;border-radius:14px;font-size:18px;font-weight:800}
@@ -542,11 +543,12 @@ function historyDecorate(){
   let tools = $a('histTools');
   if(!tools){ tools = document.createElement('div'); tools.id = 'histTools'; tools.style.cssText = 'display:flex;gap:8px;padding:10px 12px 0'; box.parentNode.insertBefore(tools, box); }
   const hasCox = idx.some(s => s.cox);
-  tools.innerHTML = (window.TRN && TRN.profiles().length > 1 ? TRN.chip() : '') + (idx.filter(s => !window.TRN || TRN.mine(s)).length >= 2 ? '<button class="big alt" id="cmpStart" style="margin:0;flex:1">Compare</button>' : '') + (hasCox ? '<button class="big alt" id="coxRep" style="margin:0;flex:1">🎙 Cox report</button>' : '');
+  if($a('hChip')) $a('hChip').innerHTML = window.TRN && TRN.profiles().length > 1 ? TRN.chip() : '';
+  tools.innerHTML = (idx.filter(s => !window.TRN || TRN.mine(s)).length >= 2 ? '<button class="htool" id="cmpStart">⇄ Compare</button>' : '') + (hasCox ? '<button class="htool" id="coxRep">🎙 Cox report</button>' : '');
   tools.style.display = tools.innerHTML ? 'flex' : 'none';
   if($a('cmpStart')) $a('cmpStart').onclick = () => { picking = !picking; picked = []; historyDecorate(); renderBar(); };
   if($a('coxRep')) $a('coxRep').onclick = () => { picking = false; picked = []; renderBar(); coxReport(); };
-  if($a('cmpStart')) $a('cmpStart').textContent = picking ? 'Cancel' : 'Compare';
+  if($a('cmpStart')) $a('cmpStart').textContent = picking ? '✕ Cancel' : '⇄ Compare';
   box.querySelectorAll('.item').forEach(it => {
     const id = +it.dataset.id, s = idx.find(x => x.id === id); if(!s) return;
     if(!it.querySelector('.tick')){ const t = document.createElement('span'); t.className = 'tick'; t.textContent = '✓'; it.querySelector('.t1').prepend(t);
