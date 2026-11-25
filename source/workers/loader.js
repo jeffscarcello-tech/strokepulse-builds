@@ -1,6 +1,6 @@
 // StrokePulse site Worker (loader) — serves the app installed in D1 by strokepulse-updater,
 // plus cloud backup, Cox mode recordings/transcripts, private coach links, and the live coach relay.
-const LOADER = 'l5';
+const LOADER = 'l6';
 let appCache = null, appChecked = 0;
 async function ensure(db) {
   await db.prepare('CREATE TABLE IF NOT EXISTS appmeta (k TEXT PRIMARY KEY, v TEXT NOT NULL)').run();
@@ -38,6 +38,101 @@ async function who(request, env, url) {
 /* D1 returns BLOB columns as a plain array of numbers; turn whatever we get back into bytes */
 const toBytes = v => v instanceof Uint8Array ? v : (v instanceof ArrayBuffer ? new Uint8Array(v) : Uint8Array.from(v || []));
 const b64 = buf => { const u = toBytes(buf); let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };
+
+/* ---------- crews: invite code → shared leaderboards and team goals (session summaries only) ---------- */
+const CODE_ABC = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+const rnd = n => { const a = new Uint8Array(n); crypto.getRandomValues(a); return a; };
+const hex = n => [...rnd(n)].map(b => b.toString(16).padStart(2, '0')).join('');
+const code6 = () => [...rnd(6)].map(b => CODE_ABC[b % CODE_ABC.length]).join('');
+async function sha(t) { return [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode('spcrew:' + t)))].map(b => b.toString(16).padStart(2, '0')).join(''); }
+const cleanName = v => String(v || '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 24);
+const cleanColor = v => /^#[0-9a-fA-F]{6}$/.test(v || '') ? v : '#2f9bff';
+const num = (v, lo, hi) => { v = +v; return isFinite(v) && v >= lo && v <= hi ? v : null; };
+let crewReady = false;
+async function crewTables(db) {
+  if (crewReady) return;
+  await db.batch([
+    db.prepare('CREATE TABLE IF NOT EXISTS crews (id TEXT PRIMARY KEY, name TEXT NOT NULL, code TEXT NOT NULL UNIQUE, owner TEXT NOT NULL, goal_m INTEGER NOT NULL DEFAULT 0, created INTEGER NOT NULL)'),
+    db.prepare('CREATE TABLE IF NOT EXISTS crew_members (crew TEXT NOT NULL, mid TEXT NOT NULL, th TEXT NOT NULL, name TEXT NOT NULL, color TEXT NOT NULL, joined INTEGER NOT NULL, seen INTEGER NOT NULL, PRIMARY KEY (crew, mid))'),
+    db.prepare('CREATE TABLE IF NOT EXISTS crew_sessions (crew TEXT NOT NULL, mid TEXT NOT NULL, sid INTEGER NOT NULL, s TEXT NOT NULL, start INTEGER NOT NULL, PRIMARY KEY (crew, mid, sid))'),
+  ]);
+  crewReady = true;
+}
+async function crewAuth(request, env, crewId) {
+  const h = request.headers.get('X-Member') || ''; const m = /^([a-f0-9]{16}):([a-f0-9]{48})$/.exec(h); if (!m || !/^[a-f0-9]{16}$/.test(crewId || '')) return null;
+  const r = await env.DB.prepare('SELECT mid FROM crew_members WHERE crew = ?1 AND mid = ?2 AND th = ?3').bind(crewId, m[1], await sha(m[2])).first();
+  return r ? m[1] : null;
+}
+/* one session summary as shared with the crew: numbers only, never GPS, audio or notes */
+function cleanSession(o) {
+  const sid = num(o && o.id, 1, 9e15), start = num(o && o.start, 1e12, 9e15); if (!sid || !start) return null;
+  const out = { id: sid, start, dist: num(o.dist, 0, 500000) || 0, time: num(o.time, 0, 86400) || 0, strokes: num(o.strokes, 0, 100000) || 0, kcal: num(o.kcal, 0, 20000) || 0, mode: o.mode === 'intervals' ? 'intervals' : 'justgo', wkDesc: cleanName(o.wkDesc) };
+  for (const k of ['b500', 'b1k', 'b2k']) { const v = num(o[k], 30, 3600); if (v) out[k] = +v.toFixed(1); }
+  const st = num(o.st, 0, 100); if (st != null) out.st = Math.round(st);
+  return out;
+}
+async function crew(request, env, op, url) {
+  const db = env.DB; await crewTables(db);
+  if (request.method !== 'POST' && op !== 'board') return json({ error: 'method' }, 405);
+  let body = {}; if (request.method === 'POST') { const t = await request.text(); if (t.length > 400000) return json({ error: 'too_big' }, 413); try { body = JSON.parse(t || '{}'); } catch (e) { return json({ error: 'bad_json' }, 400); } }
+  const now = Date.now();
+  const join = async (crewRow) => {
+    const n = await db.prepare('SELECT COUNT(*) AS n FROM crew_members WHERE crew = ?1').bind(crewRow.id).first();
+    if (n && n.n >= 40) return json({ error: 'crew_full' }, 409);
+    const mid = hex(8), token = hex(24), name = cleanName(body.name) || 'Rower';
+    await db.prepare('INSERT INTO crew_members (crew, mid, th, name, color, joined, seen) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)').bind(crewRow.id, mid, await sha(token), name, cleanColor(body.color), now).run();
+    return json({ crew: { id: crewRow.id, name: crewRow.name, code: crewRow.code }, mid, token });
+  };
+  if (op === 'create') {
+    const name = cleanName(body.crew); if (!name) return json({ error: 'name' }, 400);
+    for (let i = 0; i < 5; i++) {
+      const row = { id: hex(8), name, code: code6() };
+      try { await db.prepare('INSERT INTO crews (id, name, code, owner, goal_m, created) VALUES (?1, ?2, ?3, ?4, 0, ?5)').bind(row.id, name, row.code, '-', now).run(); }
+      catch (e) { continue; }
+      const r = await join(row); const j = await r.clone().json();
+      if (j.mid) await db.prepare('UPDATE crews SET owner = ?1 WHERE id = ?2').bind(j.mid, row.id).run();
+      return r;
+    }
+    return json({ error: 'busy' }, 503);
+  }
+  if (op === 'join') {
+    const c = String(body.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!/^[A-Z0-9]{6}$/.test(c)) return json({ error: 'bad_code' }, 400);
+    const row = await db.prepare('SELECT id, name, code FROM crews WHERE code = ?1').bind(c).first();
+    if (!row) return json({ error: 'no_crew' }, 404);
+    return join(row);
+  }
+  const crewId = op === 'board' ? url.searchParams.get('crew') : body.crew;
+  const mid = await crewAuth(request, env, crewId);
+  if (!mid) return json({ error: 'not_member' }, 403);
+  if (op === 'board') {
+    const since = now - 400 * 864e5;
+    const c = await db.prepare('SELECT id, name, code, owner, goal_m FROM crews WHERE id = ?1').bind(crewId).first();
+    const ms = (await db.prepare('SELECT mid, name, color, joined, seen FROM crew_members WHERE crew = ?1').bind(crewId).all()).results || [];
+    const ss = (await db.prepare('SELECT mid, s FROM crew_sessions WHERE crew = ?1 AND start >= ?2').bind(crewId, since).all()).results || [];
+    await db.prepare('UPDATE crew_members SET seen = ?1 WHERE crew = ?2 AND mid = ?3').bind(now, crewId, mid).run();
+    return json({ crew: c, me: mid, members: ms.map(m => Object.assign(m, { sessions: ss.filter(x => x.mid === m.mid).map(x => JSON.parse(x.s)) })) });
+  }
+  if (op === 'push') {
+    const list = (Array.isArray(body.sessions) ? body.sessions : []).slice(0, 600).map(cleanSession).filter(Boolean);
+    const since = num(body.since, 0, 9e15) || 0, st = [];
+    if (body.replace) st.push(db.prepare('DELETE FROM crew_sessions WHERE crew = ?1 AND mid = ?2 AND start >= ?3').bind(crewId, mid, since));
+    for (const o of list) st.push(db.prepare('INSERT OR REPLACE INTO crew_sessions (crew, mid, sid, s, start) VALUES (?1, ?2, ?3, ?4, ?5)').bind(crewId, mid, o.id, JSON.stringify(o), o.start));
+    if (body.name) st.push(db.prepare('UPDATE crew_members SET name = ?1, color = ?2 WHERE crew = ?3 AND mid = ?4').bind(cleanName(body.name) || 'Rower', cleanColor(body.color), crewId, mid));
+    for (let i = 0; i < st.length; i += 50) await db.batch(st.slice(i, i + 50));
+    return json({ ok: true, n: list.length });
+  }
+  if (op === 'goal') { const g = num(body.goal_m, 0, 10000000); if (g == null) return json({ error: 'goal' }, 400); await db.prepare('UPDATE crews SET goal_m = ?1 WHERE id = ?2').bind(Math.round(g), crewId).run(); return json({ ok: true }); }
+  if (op === 'leave' || op === 'remove') {
+    const target = op === 'leave' ? mid : String(body.mid || '');
+    if (op === 'remove') { const c = await db.prepare('SELECT owner FROM crews WHERE id = ?1').bind(crewId).first(); if (!c || c.owner !== mid || !/^[a-f0-9]{16}$/.test(target) || target === mid) return json({ error: 'not_owner' }, 403); }
+    await db.batch([db.prepare('DELETE FROM crew_sessions WHERE crew = ?1 AND mid = ?2').bind(crewId, target), db.prepare('DELETE FROM crew_members WHERE crew = ?1 AND mid = ?2').bind(crewId, target)]);
+    const left = await db.prepare('SELECT COUNT(*) AS n FROM crew_members WHERE crew = ?1').bind(crewId).first();
+    if (left && !left.n) await db.prepare('DELETE FROM crews WHERE id = ?1').bind(crewId).run();
+    return json({ ok: true });
+  }
+  return json({ error: 'unknown' }, 404);
+}
 
 /* ---------- cloud backup ---------- */
 async function sync(request, env, op, url) {
@@ -245,11 +340,13 @@ export default {
     if (p.startsWith('/api/sync/')) return sync(request, env, p.slice(10), url);
     if (p.startsWith('/api/cox/')) return cox(request, env, ctx, p.slice(9), url);
     if (p === '/api/live') return live(request, env, url);
+    if (p.startsWith('/api/crew/')) return crew(request, env, p.slice(10), url);
+    if (p === '/api/config') return json({ gmaps: env.GMAPS_KEY || null });
     if (p === '/admin') return request.method === 'POST' ? adminInstall(request, env) : res(ADMIN_PAGE, 'text/html; charset=utf-8');
     const app = await loadApp(env.DB);
     if (p === '/api/health') {
       const g = await env.DB.prepare("SELECT v FROM appmeta WHERE k = 'ghlast'").first().catch(() => null);
-      return res(JSON.stringify({ ok: !!app, app: 'strokepulse', build: app ? app.build : null, label: app ? app.label : null, loader: LOADER, ai: !!env.AI, live: !!env.LIVE, r2: !!env.AUDIO, updater: g ? JSON.parse(g.v) : null }, null, 2), 'application/json', { 'Cache-Control': 'no-store' });
+      return res(JSON.stringify({ ok: !!app, app: 'strokepulse', build: app ? app.build : null, label: app ? app.label : null, loader: LOADER, ai: !!env.AI, live: !!env.LIVE, r2: !!env.AUDIO, gmaps: !!env.GMAPS_KEY, updater: g ? JSON.parse(g.v) : null }, null, 2), 'application/json', { 'Cache-Control': 'no-store' });
     }
     if (!app) return res('<!doctype html><meta name=viewport content="width=device-width,initial-scale=1"><body style="font-family:-apple-system,sans-serif;text-align:center;padding:60px 20px;background:#05070a;color:#fff"><h2>StrokePulse</h2><p>Almost ready — the first version is being installed. Try again in a minute.</p>', 'text/html; charset=utf-8');
     if (p === '/' || p === '/index.html') return res(app.html, 'text/html; charset=utf-8');

@@ -129,3 +129,34 @@ console.log('ALL SERVER TESTS PASSED');
   if (process.env.R2 === '1') { assert.equal(globalThis.__r2.size, 0, 'session delete removes R2 audio'); const row = await db.prepare('SELECT COUNT(*) AS n FROM cox_audio WHERE audio IS NOT NULL').first(); assert.equal(row.n, 0, 'no audio bytes in D1'); }
   console.log('COX SERVER TESTS PASSED' + (process.env.R2 === '1' ? ' (R2 storage)' : ' (D1 storage)'));
 }
+{ // CREWS
+  const C = (op, body, hdr) => loader.fetch(new Request('https://x/api/crew/' + op, { method: body ? 'POST' : 'GET', headers: Object.assign({ 'Content-Type': 'application/json' }, hdr || {}), body: body ? JSON.stringify(body) : undefined }), env);
+  let r = await C('create', { crew: 'Selkirk Girls 8+', name: 'Emily', color: '#ff9f1c' }); assert.equal(r.status, 200); const a = await r.json();
+  assert.match(a.crew.code, /^[A-Z0-9]{6}$/); assert.match(a.mid, /^[a-f0-9]{16}$/); assert.match(a.token, /^[a-f0-9]{48}$/);
+  const HA = { 'X-Member': a.mid + ':' + a.token };
+  r = await C('join', { code: a.crew.code.toLowerCase(), name: 'Ava<script>' }); const b = await r.json(); assert.equal(b.crew.id, a.crew.id);
+  const HB = { 'X-Member': b.mid + ':' + b.token };
+  assert.equal((await C('join', { code: 'ZZZZZZ' })).status, 404);
+  // push sessions (extra fields like samples/lat must be dropped)
+  const now = Date.now();
+  r = await C('push', { crew: a.crew.id, replace: true, since: 0, sessions: [{ id: now - 5000, start: now - 5000, dist: 5000, time: 1300, strokes: 500, kcal: 300, b500: 118.4, st: 81, samples: [[1, 50, -96]], lat: 50 }, { id: 'x' }] }, HA);
+  assert.equal((await r.json()).n, 1);
+  await C('push', { crew: a.crew.id, sessions: [{ id: now - 9000, start: now - 9000, dist: 3000, time: 800, strokes: 300 }] }, HB);
+  r = await loader.fetch(new Request('https://x/api/crew/board?crew=' + a.crew.id, { headers: HB }), env); const bd = await r.json();
+  assert.equal(bd.members.length, 2); const em = bd.members.find(m => m.mid === a.mid); assert.equal(em.sessions[0].b500, 118.4); assert.equal(em.sessions[0].samples, undefined); assert.equal(em.sessions[0].lat, undefined);
+  assert.equal(bd.members.find(m => m.mid === b.mid).name, 'Avascript');
+  // replace removes a deleted session
+  await C('push', { crew: a.crew.id, replace: true, since: 0, sessions: [] }, HA);
+  r = await loader.fetch(new Request('https://x/api/crew/board?crew=' + a.crew.id, { headers: HA }), env); assert.equal((await r.json()).members.find(m => m.mid === a.mid).sessions.length, 0);
+  // auth
+  assert.equal((await loader.fetch(new Request('https://x/api/crew/board?crew=' + a.crew.id, { headers: { 'X-Member': a.mid + ':' + '0'.repeat(48) } }), env)).status, 403);
+  assert.equal((await C('remove', { crew: a.crew.id, mid: a.mid }, HB)).status, 403);   // only the owner can remove
+  assert.equal((await C('goal', { crew: a.crew.id, goal_m: 40000 }, HB)).status, 200);
+  assert.equal((await C('remove', { crew: a.crew.id, mid: b.mid }, HA)).status, 200);
+  assert.equal((await loader.fetch(new Request('https://x/api/crew/board?crew=' + a.crew.id, { headers: HB }), env)).status, 403);
+  r = await loader.fetch(new Request('https://x/api/crew/board?crew=' + a.crew.id, { headers: HA }), env); const bd2 = await r.json(); assert.equal(bd2.crew.goal_m, 40000); assert.equal(bd2.members.length, 1);
+  assert.equal((await C('leave', { crew: a.crew.id }, HA)).status, 200);
+  assert.equal(await db.prepare('SELECT id FROM crews WHERE id = ?1').bind(a.crew.id).first(), null);
+  r = await loader.fetch(new Request('https://x/api/config'), Object.assign({}, env, { GMAPS_KEY: 'AIzaTEST' })); assert.equal((await r.json()).gmaps, 'AIzaTEST');
+  console.log('CREW TESTS PASSED');
+}

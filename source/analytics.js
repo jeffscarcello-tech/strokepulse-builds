@@ -10,6 +10,13 @@ const $a = id => document.getElementById(id);
 const css = document.createElement('style');
 css.textContent = `
 .map{height:280px;border-radius:10px;overflow:hidden;position:relative;background:var(--bg)}
+.mtype{margin-bottom:8px}
+.mfoot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;flex-wrap:wrap}
+.mfoot span{font-size:12px;font-variant-numeric:tabular-nums}
+.gbtn{display:inline-block;padding:8px 12px;border-radius:10px;background:var(--acc);color:#fff;font-weight:800;font-size:14px;text-decoration:none}
+.pin .pinb{width:28px;height:28px;border-radius:50% 50% 50% 0;background:#ea4335;transform:rotate(-45deg);border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.5);margin-top:2px}
+.map{height:300px}
+@media (min-width:700px){.map{height:420px}}
 .map .unlock{position:absolute;inset:0;z-index:500;display:flex;align-items:flex-end;justify-content:center;padding-bottom:10px;background:transparent}
 .map .unlock span{background:rgba(0,0,0,.65);color:#fff;font-size:13px;font-weight:700;padding:6px 12px;border-radius:999px}
 .map .done{position:absolute;right:8px;top:8px;z-index:600;display:none;background:var(--acc);color:#fff;font-weight:800;padding:8px 12px;border-radius:8px}
@@ -97,8 +104,8 @@ function pbBadges(s, pb){ const out = []; if(pb.b500 && pb.b500.id === s.id) out
 
 /* ================= weather + wind ================= */
 const WX = { 0:'Clear', 1:'Mostly clear', 2:'Partly cloudy', 3:'Cloudy', 45:'Fog', 48:'Fog', 51:'Drizzle', 53:'Drizzle', 55:'Drizzle', 56:'Freezing drizzle', 57:'Freezing drizzle', 61:'Light rain', 63:'Rain', 65:'Heavy rain', 66:'Freezing rain', 67:'Freezing rain', 71:'Light snow', 73:'Snow', 75:'Heavy snow', 77:'Snow', 80:'Showers', 81:'Showers', 82:'Heavy showers', 85:'Snow showers', 86:'Snow showers', 95:'Thunderstorm', 96:'Thunderstorm', 99:'Thunderstorm' };
-async function fetchWeather(sm, data){
-  const p = (data.samples || []).find(s => s[1] != null); if(!p) return null;
+async function fetchWeather(sm, data, at){
+  const p = at ? [0, at[0], at[1]] : (data.samples || []).find(s => s[1] != null); if(!p) return null;
   const day = new Date(sm.start), ds = day.getFullYear() + '-' + pad(day.getMonth() + 1) + '-' + pad(day.getDate());
   const old = Date.now() - sm.start > 80 * 864e5;
   const url = 'https://' + (old ? 'archive-api' : 'api') + '.open-meteo.com/v1/' + (old ? 'archive' : 'forecast') + '?latitude=' + p[1].toFixed(4) + '&longitude=' + p[2].toFixed(4) +
@@ -106,7 +113,7 @@ async function fetchWeather(sm, data){
   const r = await fetch(url); if(!r.ok) throw new Error('wx ' + r.status); const j = await r.json(); const h = j.hourly; if(!h || !h.time) return null;
   const mid = sm.start + (sm.time || 0) * 500, local = new Date(mid + (j.utc_offset_seconds || 0) * 1000).toISOString().slice(0, 13);
   let i = h.time.findIndex(t => t.slice(0, 13) === local); if(i < 0) i = 0;
-  return { t:h.temperature_2m[i], ws:h.wind_speed_10m[i], wg:h.wind_gusts_10m[i], wd:h.wind_direction_10m[i], code:h.weather_code[i] };
+  return { t:h.temperature_2m[i], ws:h.wind_speed_10m[i], wg:h.wind_gusts_10m[i], wd:h.wind_direction_10m[i], code:h.weather_code[i], at:[+p[1].toFixed(5), +p[2].toFixed(5)] };
 }
 /* overall direction of travel (degrees) — null if the course doubles back */
 function heading(smp){
@@ -128,7 +135,7 @@ function wxHtml(wx, smp){
   if(!wx) return '';
   const temp = S.units === 'imperial' ? Math.round(wx.t * 9 / 5 + 32) + '°F' : Math.round(wx.t) + '°C';
   return '<div class="wx"><span>🌡 <b>' + temp + '</b></span><span>' + esc(WX[wx.code] || '') + '</span><span>💨 <b>' + esc(windText(wx, smp)) + '</b></span>' +
-    (wx.wg ? '<span>gusts ' + (S.units === 'imperial' ? Math.round(wx.wg * 0.6214) + ' mph' : Math.round(wx.wg) + ' km/h') + '</span>' : '') + '</div>';
+    (wx.wg ? '<span>gusts ' + (S.units === 'imperial' ? Math.round(wx.wg * 0.6214) + ' mph' : Math.round(wx.wg) + ' km/h') + '</span>' : '') + (wx.at ? '<span style="font-size:12px">at 📍 ' + wx.at[0].toFixed(4) + ', ' + wx.at[1].toFixed(4) + '</span>' : '') + '</div>';
 }
 
 /* ================= map ================= */
@@ -145,50 +152,119 @@ function leaflet(){
 const RAMP = ['#2f9bff', '#2ed47a', '#ffd400', '#ff8c00', '#ff3b30'];
 const SESS = ['#2f9bff', '#ff8c00', '#2ed47a', '#e879f9'];
 let MAP = null;   // the detail page's map, so the cox replay can move the boat dot
+
+/* Google Maps when the site has a key (from /api/config); otherwise the built-in map. Both offer Map / Satellite / Hybrid. */
+let gkeyP = null, gmP = null;
+function gkey(){
+  if(gkeyP) return gkeyP;
+  gkeyP = (async () => { let k = LS.get('sp_gkey', null); if(navigator.onLine && location.protocol === 'https:'){ try{ const r = await fetch('/api/config', { cache:'no-store' }); if(r.ok){ k = (await r.json()).gmaps || null; LS.set('sp_gkey', k); } }catch(e){} } return k; })();
+  return gkeyP;
+}
+window.gm_authFailure = () => { LS.set('sp_gbad', Date.now()); toast('Google map key not accepted — showing the standard map'); };
+function gmaps(key){
+  if(window.google && google.maps && google.maps.Map) return Promise.resolve(google.maps);
+  if(gmP) return gmP;
+  gmP = new Promise((ok, bad) => {
+    window.__spGm = () => ok(google.maps);
+    const s = document.createElement('script'); s.async = true; s.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(key) + '&callback=__spGm&v=weekly';
+    s.onerror = () => { gmP = null; bad(new Error('gmaps')); }; document.head.appendChild(s);
+    setTimeout(() => { if(!(window.google && google.maps && google.maps.Map)){ gmP = null; bad(new Error('gmaps timeout')); } }, 12000);
+  });
+  return gmP;
+}
+const MTYPES = [['roadmap', 'Map'], ['satellite', 'Satellite'], ['hybrid', 'Hybrid']];
+const gUrl = (lat, lon) => 'https://www.google.com/maps/search/?api=1&query=' + lat.toFixed(6) + '%2C' + lon.toFixed(6);
+/* speed-coloured stretches of one track, joined into as few lines as possible */
+function speedRuns(t){
+  const vs = t.filter(p => !p[7] && p[4] > 0.5).map(p => p[4]).sort((a, b) => a - b);
+  const lo = vs[Math.floor(vs.length * 0.05)] || 0, hi = vs[Math.floor(vs.length * 0.95)] || 1, runs = [];
+  for(let i = 1; i < t.length; i++){ const a = t[i - 1], b = t[i], f = Math.max(0, Math.min(0.999, (b[4] - lo) / ((hi - lo) || 1))), c = b[7] ? 'rest' : RAMP[Math.floor(f * RAMP.length)];
+    const last = runs[runs.length - 1]; if(last && last.c === c) last.pts.push([b[1], b[2]]); else runs.push({ c, pts:[[a[1], a[2]], [b[1], b[2]]] }); }
+  return { runs, lo, hi };
+}
 async function drawMap(el, sessions, opts){
   opts = opts || {};
   const tracks = sessions.map(s => (s.samples || []).filter(p => p[1] != null));
   if(!tracks.some(t => t.length > 1)){ el.closest('.card').style.display = 'none'; return null; }
-  let L; try{ L = await leaflet(); }catch(e){ el.innerHTML = '<canvas style="width:100%;height:100%" height="280"></canvas>'; try{ drawTrack(el.firstChild, sessions[0].samples || []); }catch(_){} return null; }
+  // view switch above the map, location + Google Maps button below it
+  let type = LS.get('sp_mtype', 'roadmap'); if(!MTYPES.some(m => m[0] === type)) type = 'roadmap';
+  const bar = document.createElement('div'); bar.className = 'seg mtype'; bar.innerHTML = MTYPES.map(m => '<button data-v="' + m[0] + '">' + m[1] + '</button>').join(''); el.parentNode.insertBefore(bar, el);
+  const foot = document.createElement('div'); foot.className = 'mfoot'; foot.innerHTML = '<span class="muted" id="' + el.id + 'Loc"></span><a class="gbtn" target="_blank" rel="noopener">Open in Google Maps ↗</a>'; el.after(foot);
+  const first = tracks.find(t => t.length > 1)[0]; let sel = opts.sel || [first[1], first[2]];
+  const showSel = () => { foot.querySelector('span').textContent = '📍 ' + sel[0].toFixed(5) + ', ' + sel[1].toFixed(5) + (opts.onSelect ? ' · tap the map to move' : ''); foot.querySelector('a').href = gUrl(sel[0], sel[1]); };
+  showSel();
+  let M = null;
+  const key = LS.get('sp_gbad', 0) > Date.now() - 864e5 ? null : await gkey();
+  if(key && navigator.onLine){ try{ M = await googleMap(el, tracks, sessions.length, type, sel, opts); }catch(e){ M = null; el.innerHTML = ''; } }
+  if(!M){ try{ M = await leafletMap(el, tracks, sessions.length, type, sel, opts); }catch(e){ el.innerHTML = '<canvas style="width:100%;height:100%" height="280"></canvas>'; try{ drawTrack(el.firstChild, sessions[0].samples || []); }catch(_){} bar.style.display = 'none'; return null; } }
   if(!el.isConnected) return null;
-  const map = L.map(el, { zoomControl:false, attributionControl:true, dragging:false, touchZoom:false, scrollWheelZoom:false, doubleClickZoom:false, boxZoom:false, keyboard:false, tap:false });
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19, attribution:'© OpenStreetMap' }).addTo(map);
+  segBind(bar, type, v => { type = v; LS.set('sp_mtype', v); M.setType(v); });
+  M.onPick = (lat, lon) => { sel = [lat, lon]; M.select(lat, lon); showSel(); if(opts.onSelect) opts.onSelect(lat, lon); };
+  M.track = tracks[0];
+  return M;
+}
+async function googleMap(el, tracks, nSess, type, sel, opts){
+  const gm = await gmaps(await gkey()); if(!el.isConnected) return null;
+  el.innerHTML = '';
+  const map = new gm.Map(el, { mapTypeId:type, gestureHandling:'cooperative', disableDefaultUI:true, zoomControl:true, fullscreenControl:true, clickableIcons:false, tilt:0 });
+  const bounds = new gm.LatLngBounds(), ll = p => ({ lat:p[0], lng:p[1] });
+  if(nSess === 1){ const SR = speedRuns(tracks[0]); for(const r of SR.runs) new gm.Polyline({ map, path:r.pts.map(ll), strokeColor:r.c === 'rest' ? '#8a97a6' : r.c, strokeOpacity:r.c === 'rest' ? 0.7 : 1, strokeWeight:r.c === 'rest' ? 3 : 5 });
+    if(opts.legendEl) opts.legendEl.innerHTML = '<span>' + fs(SR.lo > 0 ? (+S.splitBase) / SR.lo : null) + '</span><span class="bar"></span><span>' + fs((+S.splitBase) / SR.hi) + '</span>'; }
+  else tracks.forEach((t, k) => { if(t.length > 1) new gm.Polyline({ map, path:t.map(p => ({ lat:p[1], lng:p[2] })), strokeColor:SESS[k], strokeWeight:4, strokeOpacity:.95 }); });
+  tracks.forEach(t => t.forEach(p => bounds.extend({ lat:p[1], lng:p[2] })));
+  const dotIcon = (c, r) => ({ path:gm.SymbolPath.CIRCLE, scale:r, fillColor:c, fillOpacity:1, strokeColor:'#fff', strokeWeight:2 });
+  tracks.forEach(t => { if(t.length < 2) return; const e = t[t.length - 1]; new gm.Marker({ map, position:{ lat:e[1], lng:e[2] }, icon:dotIcon('#ff4d4f', 7), title:'Finish', zIndex:5 }); });
+  const pin = new gm.Marker({ map, position:ll(sel), title:'Selected location', zIndex:10 });
+  map.fitBounds(bounds, 24);
+  map.addListener('click', e => M.onPick && M.onPick(e.latLng.lat(), e.latLng.lng()));
+  let dot = null, callMk = [];
+  const M = { kind:'google', map,
+    setType:t => map.setMapTypeId(t),
+    select:(a, b) => { pin.setPosition({ lat:a, lng:b }); map.panTo({ lat:a, lng:b }); },
+    dot:(a, b) => { if(!dot) dot = new gm.Marker({ map, position:{ lat:a, lng:b }, icon:dotIcon('#ffffff', 8), zIndex:20, clickable:false }); else dot.setPosition({ lat:a, lng:b }); },
+    setCalls:list => { callMk.forEach(m => m.setMap(null)); callMk = list.map(c => new gm.Marker({ map, position:{ lat:c.lat, lng:c.lon }, icon:dotIcon(c.c, 5), title:c.text, zIndex:8 })); } };
+  return M;
+}
+async function leafletMap(el, tracks, nSess, type, sel, opts){
+  const L = await leaflet(); if(!el.isConnected) return null;
+  el.innerHTML = '';
+  const map = L.map(el, { zoomControl:true, attributionControl:true, dragging:false, touchZoom:false, scrollWheelZoom:false, doubleClickZoom:false, boxZoom:false, keyboard:false, tap:false });
+  const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/';
+  const layers = {
+    roadmap:[L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19, attribution:'© OpenStreetMap' })],
+    satellite:[L.tileLayer(ESRI + 'World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom:19, attribution:'Imagery © Esri' })],
+    hybrid:[L.tileLayer(ESRI + 'World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom:19, attribution:'Imagery © Esri' }), L.tileLayer(ESRI + 'Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom:19 })] };
+  let cur = null; const setType = t => { if(cur) cur.forEach(l => map.removeLayer(l)); cur = layers[t] || layers.roadmap; cur.forEach(l => l.addTo(map)); };
+  setType(type);
   const all = [];
-  if(sessions.length === 1){
-    // single session: colour each stretch by speed (blue = slow … red = fast)
-    const t = tracks[0], vs = t.filter(p => !p[7] && p[4] > 0.5).map(p => p[4]).sort((a, b) => a - b);
-    const lo = vs[Math.floor(vs.length * 0.05)] || 0, hi = vs[Math.floor(vs.length * 0.95)] || 1;
-    for(let i = 1; i < t.length; i++){
-      const a = t[i - 1], b = t[i], f = Math.max(0, Math.min(0.999, (b[4] - lo) / ((hi - lo) || 1)));
-      L.polyline([[a[1], a[2]], [b[1], b[2]]], b[7] ? { color:'#8a97a6', weight:4, dashArray:'4 6' } : { color:RAMP[Math.floor(f * RAMP.length)], weight:5 }).addTo(map);
-      all.push([b[1], b[2]]);
-    }
-    if(opts.legendEl) opts.legendEl.innerHTML = '<span>' + fs(hi > 0 ? (+S.splitBase) / lo : null) + '</span><span class="bar"></span><span>' + fs((+S.splitBase) / hi) + '</span>';
-  } else {
-    tracks.forEach((t, k) => { if(t.length < 2) return; const ll = t.map(p => [p[1], p[2]]); L.polyline(ll, { color:SESS[k], weight:4, opacity:.9 }).addTo(map); all.push(...ll); });
-  }
-  tracks.forEach((t, k) => { if(t.length < 2) return;
-    L.circleMarker([t[0][1], t[0][2]], { radius:6, color:'#fff', weight:2, fillColor:'#2ed47a', fillOpacity:1 }).addTo(map).bindTooltip('Start');
-    const e = t[t.length - 1]; L.circleMarker([e[1], e[2]], { radius:6, color:'#fff', weight:2, fillColor:'#ff4d4f', fillOpacity:1 }).addTo(map).bindTooltip('Finish'); });
+  if(nSess === 1){ const SR = speedRuns(tracks[0]); for(const r of SR.runs){ L.polyline(r.pts, r.c === 'rest' ? { color:'#8a97a6', weight:4, dashArray:'4 6' } : { color:r.c, weight:5 }).addTo(map); all.push(...r.pts); }
+    if(opts.legendEl) opts.legendEl.innerHTML = '<span>' + fs(SR.lo > 0 ? (+S.splitBase) / SR.lo : null) + '</span><span class="bar"></span><span>' + fs((+S.splitBase) / SR.hi) + '</span>'; }
+  else tracks.forEach((t, k) => { if(t.length < 2) return; const ll = t.map(p => [p[1], p[2]]); L.polyline(ll, { color:SESS[k], weight:4, opacity:.9 }).addTo(map); all.push(...ll); });
+  tracks.forEach(t => { if(t.length < 2) return; const e = t[t.length - 1]; L.circleMarker([e[1], e[2]], { radius:6, color:'#fff', weight:2, fillColor:'#ff4d4f', fillOpacity:1 }).addTo(map).bindTooltip('Finish'); });
+  const pin = L.marker(sel, { icon:L.divIcon({ className:'pin', html:'<div class="pinb"></div>', iconSize:[28, 38], iconAnchor:[14, 36] }), zIndexOffset:1000 }).addTo(map);
   map.fitBounds(L.latLngBounds(all), { padding:[18, 18] });
   // tap to move/zoom; "Done" goes back to scrolling the page
   const lock = document.createElement('div'); lock.className = 'unlock'; lock.innerHTML = '<span>Tap to move &amp; zoom the map</span>'; el.appendChild(lock);
   const done = document.createElement('button'); done.className = 'done'; done.textContent = 'Done'; el.appendChild(done);
   const on = v => { ['dragging', 'touchZoom', 'doubleClickZoom', 'scrollWheelZoom'].forEach(h => map[h][v ? 'enable' : 'disable']()); lock.style.display = v ? 'none' : 'flex'; done.style.display = v ? 'block' : 'none'; };
   lock.onclick = e => { e.stopPropagation(); on(true); }; done.onclick = e => { e.stopPropagation(); on(false); };
-  const M = { map, L, track:tracks[0], dot:null, calls:L.layerGroup().addTo(map) };
+  map.on('click', e => M.onPick && M.onPick(e.latlng.lat, e.latlng.lng));
+  let dot = null; const calls = L.layerGroup().addTo(map);
+  const M = { kind:'leaflet', map, setType,
+    select:(a, b) => pin.setLatLng([a, b]),
+    dot:(a, b) => { if(!dot) dot = L.circleMarker([a, b], { radius:8, color:'#000', weight:2, fillColor:'#fff', fillOpacity:1 }).addTo(map); else dot.setLatLng([a, b]); },
+    setCalls:list => { calls.clearLayers(); list.forEach(c => L.circleMarker([c.lat, c.lon], { radius:5, color:'#000', weight:1, fillColor:c.c, fillOpacity:1 }).bindTooltip(esc(c.text)).addTo(calls)); } };
   return M;
 }
 function mapCursor(t){
   if(!MAP || !MAP.track || !MAP.track.length) return;
   let p = MAP.track[0]; for(const q of MAP.track){ if(q[0] > t) break; p = q; }
-  if(!MAP.dot) MAP.dot = MAP.L.circleMarker([p[1], p[2]], { radius:8, color:'#000', weight:2, fillColor:'#fff', fillOpacity:1 }).addTo(MAP.map);
-  else MAP.dot.setLatLng([p[1], p[2]]);
+  MAP.dot(p[1], p[2]);
 }
 function mapCalls(calls){
-  if(!MAP || !MAP.track) return; MAP.calls.clearLayers();
-  for(const c of calls){ let p = null; for(const q of MAP.track){ if(q[0] > c.t) break; p = q; } if(!p) continue;
-    MAP.L.circleMarker([p[1], p[2]], { radius:5, color:'#000', weight:1, fillColor:c.cat.c, fillOpacity:1 }).bindTooltip(esc(c.text)).addTo(MAP.calls); }
+  if(!MAP || !MAP.track) return; const out = [];
+  for(const c of calls){ let p = null; for(const q of MAP.track){ if(q[0] > c.t) break; p = q; } if(p) out.push({ lat:p[1], lon:p[2], c:c.cat.c, text:c.text }); }
+  MAP.setCalls(out);
 }
 
 /* ================= chart along distance ================= */
@@ -437,7 +513,7 @@ function detailHtml(sm, data){
     '<div class="grid3" style="margin-top:10px">' + stat('Best 500 m', fs(b[500])) + stat('Best 1 km', fs(b[1000])) + stat('Best 2 km', fs(b[2000])) + '</div>' +
     '<div id="anaWx">' + wxHtml(data.weather, data.samples || []) + '</div>' +
     '<textarea class="notes" id="anaNotes" placeholder="Notes — who was in the boat, conditions, how it felt…">' + esc(data.notes || '') + '</textarea>' +
-    '<p class="muted" style="margin-top:6px;font-size:12px">Calories are an estimate per rower from stroke rate and your weight (Settings).</p></div>' +
+    '<p class="muted" style="margin-top:6px;font-size:12px">Calories are an estimate per rower from stroke rate and the rower’s weight (Menu).</p></div>' +
     '<div class="card"><h2>Map</h2><div class="map" id="anaMap"></div><div class="legend" id="anaLegend"></div></div>' +
     (data.cox ? '' : '<div class="card" id="anaChart"><h2>Chart</h2></div>');
 }
@@ -449,8 +525,12 @@ async function detailWire(id, sm, data){
   const anchor = $a('coxBox'), card = () => { const d = document.createElement('div'); d.className = 'card'; anchor.parentNode.insertBefore(d, anchor); return d; };
   if(window.TRN) TRN.detailExtra(id, sm, data, $a('anaMap').closest('.card'));
   piecesCard(card(), data); segCard(card(), data.samples || []); rateCard(card(), data.samples || []); sameCard(card(), sm, data);
-  drawMap($a('anaMap'), [{ samples:data.samples || [] }], { legendEl:$a('anaLegend') }).then(m => { MAP = m; if(m && pendingCalls) mapCalls(pendingCalls); }).catch(() => {});
-  if(!data.weather && navigator.onLine){ try{ const wx = await fetchWeather(sm, data); if(wx){ data.weather = wx; saveData(id, data); if($a('anaWx')) $a('anaWx').innerHTML = wxHtml(wx, data.samples || []); } }catch(e){} }
+  // weather follows the map: the pin starts at the session start; tap the map to move it and the weather updates for that spot
+  let wxSeq = 0;
+  const wxAt = async at => { const my = ++wxSeq; if(!navigator.onLine) return; try{ const wx = await fetchWeather(sm, data, at); if(wx && my === wxSeq){ data.weather = wx; saveData(id, data); if($a('anaWx')) $a('anaWx').innerHTML = wxHtml(wx, data.samples || []); } }catch(e){} };
+  drawMap($a('anaMap'), [{ samples:data.samples || [] }], { legendEl:$a('anaLegend'), sel:data.weather && data.weather.at, onSelect:(a, b) => { if($a('anaWx')) $a('anaWx').innerHTML = '<div class="wx">Getting the weather there…</div>'; wxAt([a, b]); } })
+    .then(m => { MAP = m; if(m && pendingCalls) mapCalls(pendingCalls); }).catch(() => {});
+  if(!data.weather) wxAt(null);
 }
 let pendingCalls = null;
 

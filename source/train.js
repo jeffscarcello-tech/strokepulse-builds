@@ -82,11 +82,13 @@ function profileSheet(){
     l.map(p => '<button class="opt' + (p.id === c.id ? ' on' : '') + '" data-pid="' + p.id + '" style="display:flex;align-items:center;gap:10px">' + avatar(p) + esc(p.name) + (p.id === c.id ? ' ✓' : '') + '</button>').join('') +
     '<div class="frm"><label>Add a rower</label><div style="display:flex;gap:8px"><input id="pfNew" placeholder="Name" maxlength="24"><button class="big" id="pfAdd" style="width:90px;margin:0;height:46px">Add</button></div>' +
     '<label>Rename ' + esc(c.name) + '</label><div style="display:flex;gap:8px"><input id="pfRen" value="' + esc(c.name) + '" maxlength="24"><button class="big alt" id="pfRenB" style="width:90px;margin:0;height:46px">Save</button></div></div>' +
+    '<button class="big alt" id="pfCrew" style="margin-top:14px">👥 Crews — join or invite</button>' +
     (l.length > 1 ? '<button class="big red" id="pfDel" style="margin-top:14px">Remove ' + esc(c.name) + '</button>' : ''),
     el => {
       el.querySelectorAll('[data-pid]').forEach(b => b.onclick = () => { LS.set('sp_prof', b.dataset.pid); closeSheet(); toast('Rowing as ' + cur().name); refresh(); });
       $t('pfAdd').onclick = () => { const n = $t('pfNew').value.trim(); if(!n) return; const L2 = profiles(); const p = { id:'p' + Date.now().toString(36), name:n, kg:0, c:PCOL[L2.length % PCOL.length] }; L2.push(p); LS.set('sp_profiles', L2); LS.set('sp_prof', p.id); closeSheet(); toast('Added ' + n + ' — now rowing as ' + n); refresh(); };
       $t('pfRenB').onclick = () => { const n = $t('pfRen').value.trim(); if(!n) return; const L2 = profiles(); L2.find(x => x.id === c.id).name = n; LS.set('sp_profiles', L2); closeSheet(); refresh(); };
+      $t('pfCrew').onclick = () => { closeSheet(); setTimeout(() => crewSheet(), 50); };
       if($t('pfDel')) $t('pfDel').onclick = () => { if(!confirm('Remove ' + c.name + '? Their sessions move to ' + l.find(x => x.id !== c.id).name + '.')) return;
         const L2 = profiles().filter(x => x.id !== c.id); const to = L2[0].id; const idx = LS.get('sp_index', []); idx.forEach(s => { if(s.who === c.id) s.who = to; }); LS.set('sp_index', idx);
         LS.set('sp_profiles', L2); LS.set('sp_prof', to); closeSheet(); refresh(); };
@@ -325,6 +327,7 @@ function afterSave(id){
   ensure(); const pid = cur().id, L = sessionsOf(pid), R = achieve(L), seen = LS.get('sp_ach_' + pid, {}), got = [];
   for(const r of R) if(r.t >= 0 && (seen[r.a.k] == null || seen[r.a.k] < r.t)){ got.push(r); seen[r.a.k] = r.t; }
   LS.set('sp_ach_' + pid, seen);
+  setTimeout(() => pushCrews(pid), 1500);
   if(got.length){ LS.set('sp_newach', { id, list:got.map(r => r.a.ic + ' ' + r.a.n + ' — ' + TIER[r.t][0]) }); toast('🏅 New trophy: ' + got[0].a.n); }
 }
 
@@ -362,6 +365,55 @@ function rows(period, all){
   const now = Date.now(), from = period === 'w' ? thisWeek() : period === 'm' ? new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime() : 0;
   return profiles().map(p => ({ p, L:all.filter(s => owner(s) === p.id && s.start >= from && s.start <= now) }));
 }
+
+
+/* ================= crews (online): invite code → shared boards and team goals across phones ================= */
+const crewsOf = p => (p.crews || []);
+function saveProfile(p){ const l = profiles(); const i = l.findIndex(x => x.id === p.id); if(i >= 0){ l[i] = p; LS.set('sp_profiles', l); } }
+async function crewApi(op, body, c){
+  const h = { 'Content-Type':'application/json' }; if(c) h['X-Member'] = c.mid + ':' + c.token;
+  const r = await fetch('/api/crew/' + op + (op === 'board' ? '?crew=' + c.id : ''), op === 'board' ? { headers:h, cache:'no-store' } : { method:'POST', headers:h, body:JSON.stringify(body || {}) });
+  const j = await r.json().catch(() => ({})); if(!r.ok) throw Object.assign(new Error(j.error || 'net'), { code:j.error, status:r.status }); return j;
+}
+const shareFields = s => ({ id:s.id, start:s.start, dist:s.dist, time:s.time, strokes:s.strokes, kcal:s.kcal, b500:s.b500, b1k:s.b1k, b2k:s.b2k, st:s.st, mode:s.mode, wkDesc:s.wkDesc });
+async function pushCrews(pid){
+  const p = profiles().find(x => x.id === (pid || cur().id)); if(!p || !crewsOf(p).length || !navigator.onLine) return;
+  ensure(); const since = Date.now() - 400 * DAY, list = sessionsOf(p.id).filter(s => s.start >= since).map(shareFields);
+  for(const c of crewsOf(p)){ try{ await crewApi('push', { crew:c.id, replace:true, since, sessions:list, name:p.name, color:p.c }, c); c.pushed = Date.now(); }
+    catch(e){ if(e.status === 403){ p.crews = crewsOf(p).filter(x => x.id !== c.id); toast('You were removed from ' + c.name); } } }
+  saveProfile(p);
+}
+async function crewBoard(c){
+  try{ const j = await crewApi('board', null, c); LS.set('sp_crewb_' + c.id, Object.assign(j, { at:Date.now() })); return j; }
+  catch(e){ if(e.status === 403){ const p = cur(); p.crews = crewsOf(p).filter(x => x.id !== c.id); saveProfile(p); toast('Not in ' + c.name + ' any more'); throw e; } return LS.get('sp_crewb_' + c.id, null); }
+}
+function inviteLink(c){ return location.origin + '/#join=' + c.code; }
+async function shareInvite(c){
+  const url = inviteLink(c), text = 'Join our crew "' + c.name + '" on StrokePulse: ' + url + '  (code ' + c.code + ')';
+  try{ if(navigator.share){ await navigator.share({ title:'StrokePulse crew', text, url }); return; } }catch(e){ if(e && e.name === 'AbortError') return; }
+  try{ await navigator.clipboard.writeText(text); toast('Invite copied — paste it in a text'); }catch(e){ prompt('Copy this invite:', text); }
+}
+function crewSheet(prefill){
+  const p = cur();
+  openSheet('<h2 style="margin-bottom:6px">Crews</h2><p class="muted" style="margin-bottom:10px">A crew shares distance, times, bests and calories so you can compete and set team goals. GPS routes, recordings and notes are never shared.</p>' +
+    '<div class="row" style="border:0"><span>Joining as</span>' + chip() + '</div>' +
+    '<div class="frm"><label>Join with an invite code</label><div style="display:flex;gap:8px"><input id="crCode" maxlength="7" placeholder="ABC123" autocapitalize="characters" style="text-transform:uppercase;letter-spacing:3px;font-weight:800" value="' + esc(prefill || '') + '"><button class="big" id="crJoin" style="width:96px;margin:0;height:46px">Join</button></div>' +
+    '<label style="margin-top:16px">…or start a new crew</label><div style="display:flex;gap:8px"><input id="crName" maxlength="24" placeholder="e.g. Selkirk Girls 8+"><button class="big alt" id="crMake" style="width:96px;margin:0;height:46px">Create</button></div></div>' +
+    (crewsOf(p).length ? '<h2 style="margin:16px 0 4px">' + esc(p.name) + '’s crews</h2>' + crewsOf(p).map(c => '<div class="row"><span><b>' + esc(c.name) + '</b> <span class="muted">· ' + c.code + '</span></span><span style="display:flex;gap:6px"><button class="pchip" data-inv="' + c.id + '">Invite</button><button class="pchip" data-leave="' + c.id + '" style="color:var(--bad)">Leave</button></span></div>').join('') : ''),
+    el => {
+      const done = (j, made) => { const P = cur(); P.crews = crewsOf(P).filter(x => x.id !== j.crew.id).concat({ id:j.crew.id, name:j.crew.name, code:j.crew.code, mid:j.mid, token:j.token, owner:!!made }); saveProfile(P); BS = j.crew.id; closeSheet(); toast(made ? 'Crew created — now invite your crew' : 'Joined ' + j.crew.name); pushCrews(P.id).then(() => { if($t('scr-progress') && $t('scr-progress').classList.contains('on')) renderProgress(); }); open('board'); if(made) setTimeout(() => shareInvite(P.crews[P.crews.length - 1]), 400); };
+      $t('crJoin').onclick = async () => { const code = $t('crCode').value.trim().toUpperCase(); if(code.length < 6){ toast('Enter the 6-letter code'); return; } if(crewsOf(cur()).some(c => c.code === code)){ toast('Already in that crew'); return; }
+        try{ done(await crewApi('join', { code, name:cur().name, color:cur().c })); }catch(e){ toast(e.code === 'no_crew' ? 'No crew with that code' : e.code === 'crew_full' ? 'That crew is full' : 'Couldn’t join — check your connection'); } };
+      $t('crMake').onclick = async () => { const n = $t('crName').value.trim(); if(!n){ toast('Give the crew a name'); return; }
+        try{ done(await crewApi('create', { crew:n, name:cur().name, color:cur().c }), true); }catch(e){ toast('Couldn’t create — check your connection'); } };
+      el.querySelectorAll('[data-inv]').forEach(b => b.onclick = () => shareInvite(crewsOf(cur()).find(c => c.id === b.dataset.inv)));
+      el.querySelectorAll('[data-leave]').forEach(b => b.onclick = async () => { const P = cur(), c = crewsOf(P).find(x => x.id === b.dataset.leave); if(!confirm('Leave ' + c.name + '? Your shared numbers are removed from it.')) return;
+        try{ await crewApi('leave', { crew:c.id }, c); }catch(e){} P.crews = crewsOf(P).filter(x => x.id !== c.id); saveProfile(P); if(BS === c.id) BS = 'phone'; closeSheet(); renderProgress(); });
+    });
+}
+/* invite links open straight into the join sheet */
+function checkJoinLink(){ const m = /^#join=([A-Za-z0-9]{6})$/.exec(location.hash); if(!m) return; history.replaceState(null, '', location.pathname); setTimeout(() => { open('board'); crewSheet(m[1].toUpperCase()); }, 600); }
+let BS = LS.get('sp_bscope', null);
 
 /* ================= the Progress screen ================= */
 let TAB = 'goals', BP = 'w', BM = 'm', FR = 30;
@@ -498,17 +550,38 @@ function achTab(box, L, p){
   box.innerHTML = h;
 }
 function boardTab(box, all, me){
-  const B = BOARDS.find(b => b[0] === BM), R = rows(BP, all).map(r => ({ p:r.p, v:B[2](r.L), n:r.L.length }));
+  const myCrews = crewsOf(me); if(BS !== 'phone' && !myCrews.some(c => c.id === BS)) BS = myCrews.length ? myCrews[0].id : 'phone'; LS.set('sp_bscope', BS);
+  const scope = '<div style="display:flex;gap:6px;overflow-x:auto;margin-bottom:12px">' + [['phone', '📱 This phone']].concat(myCrews.map(c => [c.id, '👥 ' + c.name])).map(x => '<button data-bs="' + x[0] + '" style="flex:none;padding:9px 14px;border-radius:999px;font-weight:800;font-size:14px;' + (x[0] === BS ? 'background:var(--acc);color:#fff' : 'background:var(--panel);color:var(--dim);border:1px solid var(--line)') + '">' + esc(x[1]) + '</button>').join('') + '<button id="bsAdd" style="flex:none;padding:9px 14px;border-radius:999px;font-weight:800;font-size:14px;background:var(--panel);color:#ff9f1c;border:1px dashed #ff9f1c">＋ Crew</button></div>';
+  const wire = () => { box.querySelectorAll('[data-bs]').forEach(b => b.onclick = () => { BS = b.dataset.bs; renderProgress(); }); $t('bsAdd').onclick = () => crewSheet(); };
+  if(BS !== 'phone'){
+    const c = myCrews.find(x => x.id === BS), cached = LS.get('sp_crewb_' + c.id, null);
+    const paint = j => { if(!box.isConnected || BS !== c.id || TAB !== 'board') return; if(!j){ box.innerHTML = scope + '<div class="card"><p>Couldn’t reach the crew — check your connection.</p></div>'; wire(); return; }
+      const members = j.members.map(m => ({ id:m.mid, name:m.name, c:m.color, sessions:m.sessions || [] }));
+      const ctx = { crew:c, info:j.crew, members, meId:j.me, owner:j.crew.owner === j.me };
+      boardBody(box, scope, ctx); wire(); };
+    if(cached) paint(cached); else box.innerHTML = scope + '<div class="card"><p class="muted">Loading ' + esc(c.name) + '…</p></div>', wire();
+    (Date.now() - (c.pushed || 0) > 60000 ? pushCrews(me.id) : Promise.resolve()).then(() => crewBoard(c)).then(paint).catch(() => {});
+    return;
+  }
+  boardBody(box, scope, null, all, me); wire();
+}
+/* one board: rowers on this phone, or the members of a crew */
+function boardBody(box, scope, ctx, all, me){
+  const now = Date.now(), from = BP === 'w' ? thisWeek() : BP === 'm' ? new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime() : 0;
+  const people = ctx ? ctx.members.map(m => ({ p:{ id:m.id, name:m.name, c:m.c }, all:m.sessions })) : profiles().map(p => ({ p, all:all.filter(s => owner(s) === p.id) }));
+  const meId = ctx ? ctx.meId : me.id;
+  const B = BOARDS.find(b => b[0] === BM), R = people.map(x => { const L = x.all.filter(s => s.start >= from && s.start <= now); return { p:x.p, L, v:B[2](L), n:L.length }; });
   const valid = R.filter(r => B[4] ? isFinite(r.v) : true).sort((a, b) => B[4] ? a.v - b.v : b.v - a.v);
   const pod = [valid[1], valid[0], valid[2]];
-  let h = '<div class="card"><div class="seg" id="bP"><button data-v="w">Week</button><button data-v="m">Month</button><button data-v="a">All time</button></div>' +
+  let h = scope + (ctx ? '<div class="card" style="display:flex;align-items:center;gap:10px"><div style="flex:1"><b style="font-size:18px">' + esc(ctx.info.name) + '</b><div class="muted" style="font-size:13px">' + people.length + ' member' + (people.length === 1 ? '' : 's') + ' · code <b style="letter-spacing:2px">' + ctx.info.code + '</b></div></div><button class="big" id="crInv" style="width:auto;padding:0 16px;margin:0;height:44px;font-size:16px">Invite</button></div>' : '') + '<div class="card"><div class="seg" id="bP"><button data-v="w">Week</button><button data-v="m">Month</button><button data-v="a">All time</button></div>' +
     '<div style="display:flex;gap:6px;overflow-x:auto;margin:10px -4px 4px;padding:0 4px" id="bM">' + BOARDS.map(b => '<button data-v="' + b[0] + '" style="flex:none;padding:8px 12px;border-radius:999px;font-weight:800;font-size:14px;' + (b[0] === BM ? 'background:#ff9f1c;color:#000' : 'background:var(--bg);color:var(--dim)') + '">' + b[1] + '</button>').join('') + '</div>';
   h += '<div class="pod">' + pod.map((r, i) => { if(!r) return '<div></div>'; const rk = i === 1 ? 1 : i === 0 ? 2 : 3, sz = rk === 1 ? 84 : 64, col = rk === 1 ? '#ffd400' : rk === 2 ? '#c0c8d0' : '#d08b4f';
     return '<div>' + (rk === 1 ? '<div style="font-size:22px">👑</div>' : '') + '<div class="ring" style="width:' + sz + 'px;height:' + sz + 'px;background:' + (r.p.c || PCOL[0]) + ';border:4px solid ' + col + ';font-size:' + Math.round(sz * 0.32) + 'px">' + esc(initials(r.p.name)) + '<span class="rk">' + rk + '</span></div><div class="nm">' + esc(r.p.name) + '</div><div class="vl">' + B[3](r.v) + '</div></div>'; }).join('') + '</div>';
-  h += valid.map((r, i) => '<div class="lbr' + (r.p.id === me.id ? ' me' : '') + '"><span class="n">' + (i + 1) + '</span>' + avatar(r.p) + '<span class="x">' + esc(r.p.name) + (r.p.id === me.id ? '<span class="you">YOU</span>' : '') + '</span><span class="v">' + B[3](r.v) + '</span></div>').join('') +
-    (profiles().length < 2 ? '<p class="muted" style="margin-top:10px">Add rowers with the name button at the top to compete on this phone. Crews across phones are coming in the next update.</p>' : '') + '</div>';
+  h += valid.map((r, i) => '<div class="lbr' + (r.p.id === meId ? ' me' : '') + '"><span class="n">' + (i + 1) + '</span>' + avatar(r.p) + '<span class="x">' + esc(r.p.name) + (r.p.id === meId ? '<span class="you">YOU</span>' : '') + '</span><span class="v">' + B[3](r.v) + '</span>' + (ctx && ctx.owner && r.p.id !== meId ? '<button class="pchip" data-kick="' + r.p.id + '" style="padding:4px 8px;font-size:12px">✕</button>' : '') + '</div>').join('') +
+    (!ctx && profiles().length < 2 ? '<p class="muted" style="margin-top:10px">Add rowers with the name button at the top, or tap ＋ Crew to compete with your crew on their own phones.</p>' : '') + '</div>';
   // team goals
-  const team = LS.get('sp_team', {}), n = profiles().length, wT = team.weekM || 20000 * n, w0 = thisWeek(), wk = rows('w', all);
+  const team = ctx ? { weekM:ctx.info.goal_m } : LS.get('sp_team', {}), n = people.length, wT = team.weekM || 20000 * n, w0 = thisWeek(), wk = people.map(x => ({ p:x.p, L:x.all.filter(s => s.start >= w0) }));
+  all = people.flatMap(x => x.all);
   const tot = wk.reduce((a, r) => a + r.L.reduce((x, s) => x + s.dist, 0), 0);
   const allT = all.reduce((a, s) => a + s.dist, 0), jNext = JOURNEY.find(j => j[0] > allT), jPrev = JOURNEY.filter(j => j[0] <= allT).pop();
   let tw = 0; for(let i = 1; i < 60; i++){ const a = w0 - i * 7 * DAY; const m = all.filter(s => inRange(s, a, a + 7 * DAY)).reduce((x, s) => x + s.dist, 0); if(m >= wT) tw++; else break; }
@@ -520,12 +593,16 @@ function boardTab(box, all, me){
     '<div class="row" style="border:0;padding:14px 0 4px"><span>📅 <b>Everyone rows 3 times</b></span><b>' + wk.filter(r => r.L.length >= 3).length + ' / ' + n + '</b></div>' +
     wk.map(r => '<div class="row" style="padding:4px 0;border:0"><span>' + avatar(r.p) + ' ' + esc(r.p.name) + '</span><span>' + [0, 1, 2].map(i => i < r.L.length ? '🟢' : '⚪').join('') + '</span></div>').join('') +
     '<div class="row" style="border:0;padding:14px 0 4px"><span>🗺 <b>Journey: ' + (jNext ? jNext[1] : 'Complete!') + '</b></span><b>' + kmTxt(allT) + (jNext ? ' / ' + kmTxt(jNext[0]) : '') + '</b></div>' + pbarHtml(jNext ? (allT - (jPrev ? jPrev[0] : 0)) / (jNext[0] - (jPrev ? jPrev[0] : 0)) : 1, '#ff9f1c') +
-    '<p class="muted" style="font-size:13px;margin-top:6px">All rowers’ metres added together, all time.' + (jPrev ? ' Done: ' + jPrev[1] + '.' : '') + '</p>' +
+    '<p class="muted" style="font-size:13px;margin-top:6px">' + (ctx ? 'Everyone in the crew’s metres added together.' : 'All rowers’ metres added together, all time.') + (jPrev ? ' Done: ' + jPrev[1] + '.' : '') + '</p>' +
     '<div class="frm"><label>Team weekly goal (' + (imp() ? 'mi' : 'km') + ')</label><input id="tW" type="number" inputmode="decimal" value="' + (imp() ? (wT / 1609.344).toFixed(0) : wT / 1000) + '"></div></div>';
   box.innerHTML = h;
   segBind($t('bP'), BP, v => { BP = v; renderProgress(); });
   box.querySelectorAll('#bM button').forEach(b => b.onclick = () => { BM = b.dataset.v; renderProgress(); });
-  $t('tW').onchange = () => { const v = parseFloat($t('tW').value); team.weekM = v > 0 ? Math.round(v * (imp() ? 1609.344 : 1000)) : 0; LS.set('sp_team', team); renderProgress(); };
+  $t('tW').onchange = async () => { const v = parseFloat($t('tW').value); team.weekM = v > 0 ? Math.round(v * (imp() ? 1609.344 : 1000)) : 0;
+    if(ctx){ try{ await crewApi('goal', { crew:ctx.crew.id, goal_m:team.weekM }, ctx.crew); const cb = LS.get('sp_crewb_' + ctx.crew.id, null); if(cb){ cb.crew.goal_m = team.weekM; LS.set('sp_crewb_' + ctx.crew.id, cb); } toast('Team goal saved for everyone'); }catch(e){ toast('Couldn’t save — check your connection'); } }
+    else LS.set('sp_team', team); renderProgress(); };
+  if(ctx){ $t('crInv').onclick = () => shareInvite(ctx.crew);
+    box.querySelectorAll('[data-kick]').forEach(b => b.onclick = async () => { const m = ctx.members.find(x => x.id === b.dataset.kick); if(!confirm('Remove ' + m.name + ' from ' + ctx.info.name + '?')) return; try{ await crewApi('remove', { crew:ctx.crew.id, mid:m.id }, ctx.crew); LS.del('sp_crewb_' + ctx.crew.id); renderProgress(); }catch(e){ toast('Couldn’t remove'); } }); }
 }
 
 /* ================= session detail additions ================= */
@@ -538,6 +615,6 @@ function detailExtra(id, sm, data, anchor){
   const cv = wrap.querySelector('.crv'); if(cv) drawCurve(cv, [curveStats(data.curve.a)]);
 }
 
-window.TRN = { profiles, cur, owner, mine, kg, setKg, chip, brand, profileSheet, open, renderProgress, afterSave, detailExtra, improve, makePlan, predict, fitness, shape, achieve, challenges, curveStats, align, ensure, sessionLoad };
-brand();
+window.TRN = { crewSheet, pushCrews, crewApi, profiles, cur, owner, mine, kg, setKg, chip, brand, profileSheet, open, renderProgress, afterSave, detailExtra, improve, makePlan, predict, fitness, shape, achieve, challenges, curveStats, align, ensure, sessionLoad };
+brand(); checkJoinLink(); window.addEventListener('hashchange', checkJoinLink);
 })();

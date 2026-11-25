@@ -184,12 +184,12 @@ body.glare .tiles button{box-shadow:none}
 
 <!-- MENU -->
 <section class="screen" id="scr-menu">
-  <div class="top"><button class="iconbtn" data-go="live">‹ Back</button><h1>Menu</h1></div>
+  <div class="top"><button class="iconbtn" data-go="live">‹ Back</button><h1>Menu</h1><span id="mChip"></span></div>
   <div class="body">
     <div class="tiles"><button data-go="history"><span>📋</span>History</button><button id="mProg"><span>📈</span>Progress<small>Goals · Trophies</small></button><button data-go="settings"><span>⚙️</span>Settings</button></div>
     <div class="card"><h2>Rower</h2>
-      <div class="row"><span id="mChip"></span><span><input id="stWeight" type="number" inputmode="decimal" class="numin"> <span id="stWUnit" class="muted"></span></span></div>
-      <p class="muted" style="padding-top:6px;font-size:13px">Tap the name to switch rowers or add one. Weight is only used for calories.</p>
+      <div class="row"><span>Weight <span class="muted" style="font-weight:400">(for calories)</span></span><span><input id="stWeight" type="number" inputmode="decimal" class="numin"> <span id="stWUnit" class="muted"></span></span></div>
+      <p class="muted" style="padding-top:6px;font-size:13px">Tap the name at the top right to switch rowers, add one, or join a crew.</p>
     </div>
     <div class="card"><h2>Main screen</h2>
       <div class="row"><span>Boxes on main screen</span><div class="seg" data-set="layout"><button data-v="3">3</button><button data-v="4">4</button><button data-v="6">6</button></div></div>
