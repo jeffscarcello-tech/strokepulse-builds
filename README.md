@@ -3,6 +3,7 @@
 StrokePulse is a GPS speed coach for iPhone (rowing and paddling), with Cox mode, training plans and crews. It is a single-page web app served by a Cloudflare Worker and updated automatically from this repo.
 
 ## Recent changes
+- Nov 25 2026, v3.18 (sp-20261125r): demo sessions no longer start at the phone's real position; map and weather ignore impossible GPS jumps (`cleanTrack` in analytics.js).
 - Nov 25 2026, v3.17 (sp-20261125q): Google map tiles no longer hidden under the boat path (map canvases exempt from the chart style).
 - Nov 25 2026, v3.16 (sp-20261125p): Report a problem now opens a short in-app box, then a pre-filled email laid out to survive Gmail on iPhone.
 - Nov 25 2026, v3.15: Crew screen (lineups, crew credit, fastest lineup, seat racing, attendance, boats, shared lineup), loader l8.

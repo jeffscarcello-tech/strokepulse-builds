@@ -12,4 +12,5 @@
 - `browser/goal.py` — weekly check-in pop-up, edit goal keeps check-ins. v3.9
 - `browser/email.py` — weekly email card on/off and the snapshot it sends. v3.11
 - `browser/lineup.py` — lineups, crew credit across two phones, shared lineup, fastest, seat racing, attendance, boats. v3.15
+- `browser/map_jump.py` — map skips a stale far-away fix; a demo session never starts at the phone's real position. v3.18
 - `browser/train_seed.py` — shared sample sessions used by the browser tests.
