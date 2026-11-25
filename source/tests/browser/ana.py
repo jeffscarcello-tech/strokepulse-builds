@@ -81,8 +81,8 @@ async def main():
         print('cox report:', await pg.evaluate("document.getElementById('crBody').innerText.slice(0,700)"))
         await pg.screenshot(path='a_coxrep.png')
         # weight + live cal
-        await pg.evaluate("go('settings')"); await pg.wait_for_timeout(200); await pg.fill('#stWeight','80'); await pg.evaluate("document.getElementById('stWeight').dispatchEvent(new Event('change'))")
-        print('weightKg', await pg.evaluate("window.__SP.S.weightKg"), 'cal metric in picker:', await pg.evaluate("typeof METRICS!=='undefined' && !!METRICS.cal"))
+        await pg.evaluate("go('menu')"); await pg.wait_for_timeout(200); await pg.fill('#stWeight','80'); await pg.evaluate("document.getElementById('stWeight').dispatchEvent(new Event('change'))")
+        print('weightKg', await pg.evaluate("TRN.cur().kg"), 'cal metric in picker:', await pg.evaluate("typeof METRICS!=='undefined' && !!METRICS.cal"))
         # dark->bright check map legend
         print('errors', errs); await b.close()
 asyncio.run(main())

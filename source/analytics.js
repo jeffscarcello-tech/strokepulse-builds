@@ -106,7 +106,7 @@ function pbBadges(s, pb){ const out = []; if(pb.b500 && pb.b500.id === s.id) out
 /* ================= weather + wind ================= */
 const WX = { 0:'Clear', 1:'Mostly clear', 2:'Partly cloudy', 3:'Cloudy', 45:'Fog', 48:'Fog', 51:'Drizzle', 53:'Drizzle', 55:'Drizzle', 56:'Freezing drizzle', 57:'Freezing drizzle', 61:'Light rain', 63:'Rain', 65:'Heavy rain', 66:'Freezing rain', 67:'Freezing rain', 71:'Light snow', 73:'Snow', 75:'Heavy snow', 77:'Snow', 80:'Showers', 81:'Showers', 82:'Heavy showers', 85:'Snow showers', 86:'Snow showers', 95:'Thunderstorm', 96:'Thunderstorm', 99:'Thunderstorm' };
 async function fetchWeather(sm, data, at){
-  const p = at ? [0, at[0], at[1]] : (data.samples || []).find(s => s[1] != null); if(!p) return null;
+  const p = at ? [0, at[0], at[1]] : cleanTrack((data.samples || []).filter(s => s[1] != null))[0]; if(!p) return null;
   const day = new Date(sm.start), ds = day.getFullYear() + '-' + pad(day.getMonth() + 1) + '-' + pad(day.getDate());
   const old = Date.now() - sm.start > 80 * 864e5;
   const url = 'https://' + (old ? 'archive-api' : 'api') + '.open-meteo.com/v1/' + (old ? 'archive' : 'forecast') + '?latitude=' + p[1].toFixed(4) + '&longitude=' + p[2].toFixed(4) +
@@ -183,9 +183,20 @@ function speedRuns(t){
     const last = runs[runs.length - 1]; if(last && last.c === c) last.pts.push([b[1], b[2]]); else runs.push({ c, pts:[[a[1], a[2]], [b[1], b[2]]] }); }
   return { runs, lo, hi };
 }
+/* drop GPS jumps no boat could make (a stale or glitchy fix): split the track at any jump faster than 15 m/s
+   and keep the stretches that hold most of the session */
+function cleanTrack(t){
+  if(t.length < 3) return t;
+  const R = 6371000, rad = Math.PI / 180, dist = (a, b) => { const dl = (b[1] - a[1]) * rad, dn = (b[2] - a[2]) * rad * Math.cos(a[1] * rad); return R * Math.sqrt(dl * dl + dn * dn); };
+  const segs = [[t[0]]];
+  for(let i = 1; i < t.length; i++){ const a = t[i - 1], b = t[i], dt = Math.max(1, b[0] - a[0]); if(dist(a, b) > 15 * dt + 30) segs.push([b]); else segs[segs.length - 1].push(b); }
+  if(segs.length === 1) return t;
+  const big = Math.max(...segs.map(s => s.length));
+  return [].concat(...segs.filter(s => s.length >= Math.max(5, big * 0.2)));
+}
 async function drawMap(el, sessions, opts){
   opts = opts || {};
-  const tracks = sessions.map(s => (s.samples || []).filter(p => p[1] != null));
+  const tracks = sessions.map(s => cleanTrack((s.samples || []).filter(p => p[1] != null)));
   if(!tracks.some(t => t.length > 1)){ el.closest('.card').style.display = 'none'; return null; }
   // view switch above the map, location + Google Maps button below it
   let type = LS.get('sp_mtype', 'roadmap'); if(!MTYPES.some(m => m[0] === type)) type = 'roadmap';
@@ -529,6 +540,8 @@ async function detailWire(id, sm, data){
   piecesCard(card(), data); segCard(card(), data.samples || []); rateCard(card(), data.samples || []); sameCard(card(), sm, data);
   // weather follows the map: the pin starts at the session start; tap the map to move it and the weather updates for that spot
   let wxSeq = 0;
+  // weather saved for a spot far from the cleaned-up track (an old bad GPS fix) gets looked up again
+  if(data.weather && data.weather.at){ const t = cleanTrack((data.samples || []).filter(p => p[1] != null)); const near = t.some(p => Math.abs(p[1] - data.weather.at[0]) < 0.02 && Math.abs(p[2] - data.weather.at[1]) < 0.03); if(t.length && !near){ delete data.weather; saveData(id, data); } }
   const wxAt = async at => { const my = ++wxSeq; if(!navigator.onLine) return; try{ const wx = await fetchWeather(sm, data, at); if(wx && my === wxSeq){ data.weather = wx; saveData(id, data); if($a('anaWx')) $a('anaWx').innerHTML = wxHtml(wx, data.samples || []); } }catch(e){} };
   drawMap($a('anaMap'), [{ samples:data.samples || [] }], { legendEl:$a('anaLegend'), sel:data.weather && data.weather.at, onSelect:(a, b) => { if($a('anaWx')) $a('anaWx').innerHTML = '<div class="wx">Getting the weather there…</div>'; wxAt([a, b]); } })
     .then(m => { MAP = m; if(m && pendingCalls) mapCalls(pendingCalls); }).catch(() => {});

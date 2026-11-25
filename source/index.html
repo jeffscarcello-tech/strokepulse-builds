@@ -493,6 +493,8 @@ let demoT=null, demoStrokeT=null, demoState={lat:50.143,lon:-96.873,hd:0.6,v:0};
 function startDemo(){
   stopDemo();
   demoState.v=0;
+  // forget the phone's real position so a demo session holds demo positions only
+  gps.prev=null; gps.lat=null; gps.lon=null; gps.hist=[]; gps.v=0; gps.rawV=0;
   demoT=setInterval(()=>{
     const target = run && run.phase==='rest' ? 1.2 : (run ? 4.3 : 0);
     demoState.v += (target-demoState.v)*0.15 + (Math.random()-0.5)*0.12;
