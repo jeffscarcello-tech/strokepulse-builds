@@ -258,7 +258,7 @@ function renderSettingsCard(){
     (link ? '<p class="code" style="font-size:13px;word-break:break-all">' + esc(link) + '</p><button class="big" id="cxShare" style="height:44px;font-size:16px">Send link to coach</button><button class="big alt" id="cxReset" style="height:44px;font-size:16px">Reset link (old link stops working)</button>'
           : '<button class="big" id="cxMake" style="height:48px;font-size:17px">Create coach link</button>') : '') +
     '<p class="muted" style="padding-top:10px">Use a headset mic plugged into the phone. Recordings back up with your sessions, so Cloud Backup must be on.</p></div>';
-  segBind($c('cxOn'), CS.on ? '1' : '0', v => { CS.on = v === '1'; saveCS(); renderAll(); if(CS.on) liveConnect(); else liveClose(); });
+  segBind($c('cxOn'), CS.on ? '1' : '0', v => { CS.on = v === '1'; saveCS(); renderSettingsCard(); renderMenuCards(); renderAll(); if(CS.on) liveConnect(); else liveClose(); toast(CS.on ? 'Cox mode on' : 'Cox mode off'); });
   if(!CS.on) return;
   segBind($c('cxPass'), CS.pass, v => { CS.pass = v; saveCS(); setPass(); renderSettingsCard(); });
   segBind($c('cxLive'), CS.live, v => { CS.live = v; saveCS(); renderSettingsCard(); if(v === '1') liveConnect(); else liveClose(); });

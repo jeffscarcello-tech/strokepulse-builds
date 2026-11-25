@@ -62,8 +62,12 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
 .card h2{font-size:15px;color:var(--dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px}
 .row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
 .row:last-child{border-bottom:0}
-.seg{display:flex;background:var(--bg);border-radius:9px;padding:3px;gap:3px;flex-wrap:wrap}
-.seg button{padding:8px 11px;border-radius:7px;font-size:15px;color:var(--dim)}
+.seg{display:flex;background:var(--bg);border-radius:10px;padding:3px;gap:3px;width:100%}
+.seg button{flex:1 1 0;min-width:0;padding:10px 4px;border-radius:8px;font-size:15px;line-height:1.2;color:var(--dim);text-align:center}
+/* settings rows: label on top, full-width control underneath — same layout everywhere */
+.row:has(.seg),.row:has(input[type=range]){flex-direction:column;align-items:stretch;gap:8px}
+.row > span{font-weight:600}
+.row input[type=range]{width:100%!important}
 .seg button.on{background:var(--acc);color:#fff;font-weight:700}
 .big{width:100%;height:56px;border-radius:12px;font-size:19px;font-weight:800;background:var(--acc);color:#fff;margin-top:6px}
 .big.alt{background:var(--panel);color:var(--fg);border:1px solid var(--line)}
@@ -72,6 +76,7 @@ input[type=text].mini{width:74px;padding:9px;border-radius:8px;border:1px solid 
 .code{font-family:ui-monospace,Menlo,monospace;font-size:19px;font-weight:700;letter-spacing:1px;user-select:all;-webkit-user-select:all}
 input.codein{width:100%;padding:11px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font-size:17px;font-family:ui-monospace,Menlo,monospace;text-transform:uppercase;margin-top:8px}
 .row .two{display:flex;align-items:center;gap:6px}
+.row .two input{width:80px!important}
 input[type=number]{width:90px;padding:9px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font-size:17px;text-align:center}
 .list .item{display:block;width:100%;text-align:left;background:var(--panel);border-radius:12px;padding:14px;margin-bottom:10px}
 .item .t1{font-weight:700;font-size:17px}.item .t2{color:var(--dim);font-size:14px;margin-top:4px}
@@ -148,7 +153,7 @@ canvas{width:100%;display:block;border-radius:8px;background:var(--bg)}
       <div class="row"><span>Distance / speed</span><div class="seg" data-set="units"><button data-v="metric">Metric</button><button data-v="imperial">Imperial</button></div></div>
     </div>
     <div class="card"><h2>Sensors</h2>
-      <div class="row"><span>Split averaging</span><div class="seg" data-set="smooth"><button data-v="st3">3 strokes</button><button data-v="st5">5 strokes</button><button data-v="2">2 s</button><button data-v="5">5 s</button><button data-v="0">Off</button></div></div>
+      <div class="row"><span>Split averaging</span><div class="seg" data-set="smooth"><button data-v="st3">3 strokes</button><button data-v="st5">5 strokes</button><button data-v="2">2 sec</button><button data-v="5">5 sec</button></div></div>
       <div class="row"><span>Stroke sensitivity</span><div class="seg" data-set="sens"><button data-v="0.7">Low</button><button data-v="1">Med</button><button data-v="1.4">High</button></div></div>
       <div class="row"><span>Ignore GPS worse than</span><div class="seg" data-set="maxAcc"><button data-v="15">15 m</button><button data-v="30">30 m</button><button data-v="60">60 m</button></div></div>
       <p class="muted" style="padding-top:8px">Stroke rate comes from the phone's motion sensor, so mount the phone firmly to the boat. If the rate skips strokes, raise sensitivity; if it double-counts, lower it.</p>
@@ -219,6 +224,7 @@ const DEF = { sport:'row', splitBase:'500', units:'metric', smooth:'st3', sens:'
   wk:{ mode:'justgo', reps:4, type:'dist', val:1000, rest:120, auto:'0', tr:[null,null], ts:[null,null] } };
 const S = Object.assign({}, DEF, LS.get('sp_settings', {}));
 S.wk = Object.assign({}, DEF.wk, S.wk||{});
+if(S.smooth==='0'||S.smooth==='10') S.smooth='5';
 if(!S.m15){ if(S.smooth==='2') S.smooth='st3'; S.m15=1; }
 if(S.glare!==undefined){ if(!LS.get('sp_settings',{}).theme) S.theme = S.glare==='1' ? 'bright' : 'dark'; delete S.glare; }
 if(!Array.isArray(S.fields) || S.fields.length!==6) S.fields = DEF.fields.slice();
