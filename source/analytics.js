@@ -522,14 +522,15 @@ function callList(match, title, have){
 /* ================= session detail ================= */
 function detailHtml(sm, data){
   const A = summary(sm, data), b = A.bests;
+  const indoor = !!data.indoor;
   return '<div class="card"><div class="grid3">' +
     stat('Distance', fmtDist(sm.dist) + ' ' + distUnit(sm.dist)) + stat('Duration', fmtTime(A.T)) + stat('Avg ' + splitLabel() + (A.workOnly ? ' (work)' : ''), fs(A.avgSplit)) +
     stat('Strokes', sm.strokes) + stat('Avg Rate', A.avgRate.toFixed(1)) + stat('Avg DPS', dpsTxt(A.dps)) +
-    stat('Calories', Math.round(A.kcal) + ' kcal') + stat('Max Rate', A.maxRate ? A.maxRate.toFixed(0) : '–') + stat('Workout', esc(sm.wkDesc)) + '</div>' +
+    stat('Calories', Math.round(A.kcal) + ' kcal') + stat('Max Rate', A.maxRate ? A.maxRate.toFixed(0) : '–') + stat('Workout', esc(String(sm.wkDesc || '').replace(/^Erg · /, ''))) + '</div>' +
     '<div class="grid3" style="margin-top:10px">' + stat('Consistency', A.steady ? A.steady.score + ' <span style="font-size:12px" class="muted">' + steadyWord(A.steady.score) + '</span>' : '–') + stat('Split ±', A.steady ? A.steady.sdS.toFixed(1) + ' s' : '–') + stat('Rate ±', A.steady && A.steady.sdR ? A.steady.sdR.toFixed(1) : '–') + '</div>' +
     '<div class="grid3" style="margin-top:10px">' + stat('Best 500 m', fs(b[500])) + stat('Best 1 km', fs(b[1000])) + stat('Best 2 km', fs(b[2000])) + '</div>' +
-    pauseHtml(data) +
-    '<div id="anaWx">' + wxHtml(data.weather, data.samples || []) + '</div>' +
+    pauseHtml(data) + (window.ERG ? ERG.detailHtml(data) : '') +
+    (indoor ? '' : '<div id="anaWx">' + wxHtml(data.weather, data.samples || []) + '</div>') +
     '<textarea class="notes" id="anaNotes" placeholder="Notes — who was in the boat, conditions, how it felt…">' + esc(data.notes || '') + '</textarea>' +
     '<p class="muted" style="margin-top:6px;font-size:12px">Calories are an estimate per rower from stroke rate and the rower’s weight (Menu).</p></div>' +
     '<div class="card"><h2>Map</h2><div class="map" id="anaMap"></div><div class="legend" id="anaLegend"></div></div>' +
@@ -570,7 +571,7 @@ async function detailWire(id, sm, data){
   const wxAt = async at => { const my = ++wxSeq; if(!navigator.onLine) return; try{ const wx = await fetchWeather(sm, data, at); if(wx && my === wxSeq){ data.weather = wx; saveData(id, data); if($a('anaWx')) $a('anaWx').innerHTML = wxHtml(wx, data.samples || []); } }catch(e){} };
   drawMap($a('anaMap'), [{ samples:data.samples || [] }], { legendEl:$a('anaLegend'), sel:data.weather && data.weather.at, onSelect:(a, b) => { if($a('anaWx')) $a('anaWx').innerHTML = '<div class="wx">Getting the weather there…</div>'; wxAt([a, b]); } })
     .then(m => { MAP = m; if(m) mapPauses(data); if(m && pendingCalls) mapCalls(pendingCalls); }).catch(() => {});
-  if(!data.weather) wxAt(null);
+  if(!data.weather && !data.indoor) wxAt(null);
 }
 let pendingCalls = null;
 

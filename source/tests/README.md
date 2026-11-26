@@ -1,7 +1,7 @@
 # StrokePulse tests
 
 ## Server (Node, no browser)
-- `server.test.mjs` — updater install, loader routes, webhook signature, cloud backup, Cox recordings and transcripts, coach link, crews (create, join, push, board, goal, remove, leave), weekly report emails (send once at Sunday 6 PM local, unsubscribe), crew credit and shared lineup.
+- `server.test.mjs` — updater install, loader routes, webhook signature, cloud backup, Cox recordings and transcripts, coach link, crews (create, join, push, board, goal, remove, leave), weekly report emails (send once at Sunday 6 PM local, unsubscribe), crew credit and shared lineup, Concept2 link (OAuth, refresh, hashed key, errors).
 - `calls.test.mjs` — Cox call splitting at pauses and keyword timing.
 
 ## Browser (Playwright, against a local copy of the site at https://127.0.0.1:8787/)
@@ -16,4 +16,5 @@
 - `browser/pause_marker.py` — off-screen pause: toast, saved gaps, detail box, map marker, History tag, phone-closed session; 390 and 1280 px. v3.19
 - `browser/map_position.py` — session detail: map sits just above Export (after the Cox section) and is still drawn; 390 and 1280 px. v3.20
 - `browser/chart_unpin.py` — Cox session: chart pinned while reading calls, scrolls away at the map; 390 and 1280 px. v3.21
+- `browser/erg_import.py` + `browser/c2mock.mjs` — Concept2 connect and import against a stand-in Concept2 server (run the mock on port 9911 and the local site with C2_BASE=http://127.0.0.1:9911); 390 and 1280 px. v3.22
 - `browser/train_seed.py` — shared sample sessions used by the browser tests.

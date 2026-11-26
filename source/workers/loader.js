@@ -1,6 +1,6 @@
 // StrokePulse site Worker (loader) — serves the app installed in D1 by strokepulse-updater,
 // plus cloud backup, Cox mode recordings/transcripts, private coach links, and the live coach relay.
-const LOADER = 'l8';
+const LOADER = 'l9';
 let appCache = null, appChecked = 0;
 async function ensure(db) {
   await db.prepare('CREATE TABLE IF NOT EXISTS appmeta (k TEXT PRIMARY KEY, v TEXT NOT NULL)').run();
@@ -38,6 +38,92 @@ async function who(request, env, url) {
 /* D1 returns BLOB columns as a plain array of numbers; turn whatever we get back into bytes */
 const toBytes = v => v instanceof Uint8Array ? v : (v instanceof ArrayBuffer ? new Uint8Array(v) : Uint8Array.from(v || []));
 const b64 = buf => { const u = toBytes(buf); let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };
+
+/* ---------- Concept2 Logbook: connect once, then import erg workouts (read-only) ----------
+   The phone keeps a random link key; the server keeps only its hash plus the Concept2 tokens. */
+const C2_SCOPE = 'user:read,results:read';
+const c2base = env => env.C2_BASE || 'https://log.concept2.com';
+let c2Ready = false;
+async function c2Tables(db) {
+  if (c2Ready) return;
+  await db.batch([
+    db.prepare('CREATE TABLE IF NOT EXISTS c2_links (lh TEXT PRIMARY KEY, access TEXT NOT NULL, refresh TEXT NOT NULL, exp INTEGER NOT NULL, name TEXT, created INTEGER NOT NULL, updated INTEGER NOT NULL)'),
+    db.prepare('CREATE TABLE IF NOT EXISTS c2_states (st TEXT PRIMARY KEY, lh TEXT NOT NULL, at INTEGER NOT NULL)')
+  ]);
+  c2Ready = true;
+}
+async function c2hash(lk) { return [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode('spc2:' + lk)))].map(b => b.toString(16).padStart(2, '0')).join(''); }
+/* the Concept2 login may open in a browser sheet over the home-screen app, so the answer is a page that says what to do next */
+const C2_MSG = { ok: ['✅', 'Concept2 connected', 'Go back to StrokePulse. Your erg workouts will start coming in.'], denied: ['✋', 'Not connected', 'Concept2 access was not allowed. You can try again from the StrokePulse menu.'], expired: ['⌛', 'That link has expired', 'Start again from the StrokePulse menu: Concept2 erg → Connect.'], failed: ['⚠️', 'Concept2 didn’t answer', 'Please try again in a minute from the StrokePulse menu.'], notset: ['🛠', 'Not switched on yet', 'The Concept2 connection isn’t set up on this site yet.'] };
+const c2back = (url, r) => { const m = C2_MSG[r] || C2_MSG.failed; return new Response('<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>' + m[1] + '</title><body data-r="' + r + '" style="font-family:-apple-system,system-ui,sans-serif;text-align:center;padding:56px 22px;background:#05070a;color:#fff"><div style="font-size:52px">' + m[0] + '</div><h2>' + m[1] + '</h2><p style="color:#9fb0c3;line-height:1.5">' + m[2] + '</p><p style="color:#9fb0c3;font-size:14px">On the home-screen app, tap Done (top left) to close this page.</p><a href="/#c2=' + r + '" style="display:inline-block;margin-top:14px;background:#2f9bff;color:#fff;padding:14px 22px;border-radius:12px;font-weight:700;text-decoration:none">Open StrokePulse</a>', { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } }); };
+async function c2token(env, form) {
+  const body = new URLSearchParams(Object.assign({ client_id: env.C2_CLIENT_ID, client_secret: env.C2_CLIENT_SECRET, scope: C2_SCOPE }, form));
+  const r = await fetch(c2base(env) + '/oauth/access_token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' }, body });
+  if (!r.ok) throw new Error('c2_token_' + r.status);
+  const j = await r.json(); if (!j.access_token) throw new Error('c2_token_bad');
+  return j;
+}
+async function c2get(env, link, path) {
+  const db = env.DB;
+  if (link.exp < Date.now() + 60000) {   // refresh a week-old access token; each refresh hands back a new refresh token
+    const j = await c2token(env, { grant_type: 'refresh_token', refresh_token: link.refresh });
+    link.access = j.access_token; link.refresh = j.refresh_token || link.refresh; link.exp = Date.now() + (+j.expires_in || 604800) * 1000;
+    await db.prepare('UPDATE c2_links SET access = ?1, refresh = ?2, exp = ?3, updated = ?4 WHERE lh = ?5').bind(link.access, link.refresh, link.exp, Date.now(), link.lh).run();
+  }
+  const r = await fetch(c2base(env) + path, { headers: { Authorization: 'Bearer ' + link.access, Accept: 'application/vnd.c2logbook.v1+json' } });
+  return r;
+}
+async function c2(request, env, op, url) {
+  if (!env.C2_CLIENT_ID || !env.C2_CLIENT_SECRET) return op === 'cb' ? c2back(url, 'notset') : json({ error: 'not_set_up' }, 503);
+  const db = env.DB; await c2Tables(db);
+  const redirect = url.origin + '/api/c2/cb';
+  if (op === 'start') {   // the phone opens this page; Concept2 asks the rower to log in and allow read access
+    const lk = url.searchParams.get('lk') || ''; if (!/^[0-9a-f]{64}$/.test(lk)) return json({ error: 'bad_link' }, 400);
+    const st = hex(16); await db.prepare('INSERT INTO c2_states (st, lh, at) VALUES (?1, ?2, ?3)').bind(st, await c2hash(lk), Date.now()).run();
+    await db.prepare('DELETE FROM c2_states WHERE at < ?1').bind(Date.now() - 3600000).run();
+    return Response.redirect(c2base(env) + '/oauth/authorize?' + new URLSearchParams({ client_id: env.C2_CLIENT_ID, scope: C2_SCOPE, response_type: 'code', redirect_uri: redirect, state: st }), 302);
+  }
+  if (op === 'cb') {
+    const st = url.searchParams.get('state') || '', code = url.searchParams.get('code') || '';
+    if (url.searchParams.get('error')) return c2back(url, 'denied');
+    const row = await db.prepare('SELECT lh, at FROM c2_states WHERE st = ?1').bind(st).first();
+    if (!row || row.at < Date.now() - 3600000 || !code) return c2back(url, 'expired');
+    await db.prepare('DELETE FROM c2_states WHERE st = ?1').bind(st).run();
+    let j; try { j = await c2token(env, { grant_type: 'authorization_code', code, redirect_uri: redirect }); } catch (e) { return c2back(url, 'failed'); }
+    const link = { lh: row.lh, access: j.access_token, refresh: j.refresh_token || '', exp: Date.now() + (+j.expires_in || 604800) * 1000 };
+    let name = null; try { const u = await c2get(env, link, '/api/users/me'); if (u.ok) { const d = (await u.json()).data || {}; name = cleanName([d.first_name, d.last_name].filter(Boolean).join(' ') || d.username); } } catch (e) {}
+    await db.prepare('INSERT OR REPLACE INTO c2_links (lh, access, refresh, exp, name, created, updated) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)').bind(link.lh, link.access, link.refresh, link.exp, name, Date.now()).run();
+    return c2back(url, 'ok');
+  }
+  const lk = request.headers.get('X-C2-Link') || ''; if (!/^[0-9a-f]{64}$/.test(lk)) return json({ error: 'bad_link' }, 400);
+  const link = await db.prepare('SELECT * FROM c2_links WHERE lh = ?1').bind(await c2hash(lk)).first();
+  if (op === 'status') return json({ linked: !!link, name: link ? link.name : null });
+  if (!link) return json({ error: 'not_linked' }, 404);
+  if (op === 'unlink') { await db.prepare('DELETE FROM c2_links WHERE lh = ?1').bind(link.lh).run(); return json({ ok: true }); }
+  try {
+    if (op === 'results') {   // newest rower workouts after a date, up to 500
+      const from = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get('from') || '') ? url.searchParams.get('from') : null, out = [];
+      for (let page = 1; page <= 2; page++) {
+        const q = new URLSearchParams({ type: 'rower', number: '250', page: String(page) }); if (from) q.set('from', from);
+        const r = await c2get(env, link, '/api/users/me/results?' + q);
+        if (r.status === 401) return json({ error: 'relink' }, 401);
+        if (!r.ok) return json({ error: 'c2_' + r.status }, 502);
+        const j = await r.json(); for (const w of j.data || []) out.push({ id: w.id, date: w.date, date_utc: w.date_utc, timezone: w.timezone, distance: w.distance, time: w.time, workout_type: w.workout_type, stroke_rate: w.stroke_rate, stroke_count: w.stroke_count, heart_rate: w.heart_rate, calories_total: w.calories_total, drag_factor: w.drag_factor, rest_distance: w.rest_distance, rest_time: w.rest_time, stroke_data: w.stroke_data, workout: w.workout });
+        const pg = j.meta && j.meta.pagination; if (!pg || pg.current_page >= pg.total_pages) break;
+      }
+      return json({ results: out });
+    }
+    if (op === 'strokes') {
+      const id = url.searchParams.get('id') || ''; if (!/^\d{1,12}$/.test(id)) return json({ error: 'bad_id' }, 400);
+      const r = await c2get(env, link, '/api/users/me/results/' + id + '/strokes');
+      if (r.status === 404) return json({ strokes: [] });
+      if (r.status === 401) return json({ error: 'relink' }, 401);
+      if (!r.ok) return json({ error: 'c2_' + r.status }, 502);
+      return json({ strokes: ((await r.json()).data || []).map(k => [k.t, k.d, k.p, k.spm, k.hr || 0]) });
+    }
+  } catch (e) { return json({ error: String(e && e.message || e).slice(0, 60) }, 502); }
+  return json({ error: 'unknown' }, 404);
+}
 
 /* ---------- crews: invite code → shared leaderboards and team goals (session summaries only) ---------- */
 const CODE_ABC = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -480,14 +566,15 @@ export default {
     if (p.startsWith('/api/cox/')) return cox(request, env, ctx, p.slice(9), url);
     if (p === '/api/live') return live(request, env, url);
     if (p.startsWith('/api/crew/')) return crew(request, env, p.slice(10), url);
-    if (p === '/api/config') return json({ gmaps: env.GMAPS_KEY || null, email: !!env.RESEND_API_KEY });
+    if (p === '/api/config') return json({ gmaps: env.GMAPS_KEY || null, email: !!env.RESEND_API_KEY, c2: !!(env.C2_CLIENT_ID && env.C2_CLIENT_SECRET) });
     if (p.startsWith('/api/report/')) return report(request, env, p.slice(12));
+    if (p.startsWith('/api/c2/')) return c2(request, env, p.slice(8), url);
     if (p === '/u') return unsubscribe(request, env, url);
     if (p === '/admin') return request.method === 'POST' ? adminInstall(request, env) : res(ADMIN_PAGE, 'text/html; charset=utf-8');
     const app = await loadApp(env.DB);
     if (p === '/api/health') {
       const g = await env.DB.prepare("SELECT v FROM appmeta WHERE k = 'ghlast'").first().catch(() => null);
-      return res(JSON.stringify({ ok: !!app, app: 'strokepulse', build: app ? app.build : null, label: app ? app.label : null, loader: LOADER, ai: !!env.AI, live: !!env.LIVE, r2: !!env.AUDIO, gmaps: !!env.GMAPS_KEY, email: !!env.RESEND_API_KEY, updater: g ? JSON.parse(g.v) : null }, null, 2), 'application/json', { 'Cache-Control': 'no-store' });
+      return res(JSON.stringify({ ok: !!app, app: 'strokepulse', build: app ? app.build : null, label: app ? app.label : null, loader: LOADER, ai: !!env.AI, live: !!env.LIVE, r2: !!env.AUDIO, gmaps: !!env.GMAPS_KEY, email: !!env.RESEND_API_KEY, c2: !!env.C2_CLIENT_ID, updater: g ? JSON.parse(g.v) : null }, null, 2), 'application/json', { 'Cache-Control': 'no-store' });
     }
     if (!app) return res('<!doctype html><meta name=viewport content="width=device-width,initial-scale=1"><body style="font-family:-apple-system,sans-serif;text-align:center;padding:60px 20px;background:#05070a;color:#fff"><h2>StrokePulse</h2><p>Almost ready — the first version is being installed. Try again in a minute.</p>', 'text/html; charset=utf-8');
     if (p === '/' || p === '/index.html') return res(app.html, 'text/html; charset=utf-8');

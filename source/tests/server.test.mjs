@@ -214,3 +214,55 @@ console.log('ALL SERVER TESTS PASSED');
   await C('lineup', { crew: a.crew.id, lineup: null }, HA); bd = await B(a.crew.id, HC); assert.equal(bd.crew.lineup, null);
   console.log('CREDIT + LINEUP TESTS PASSED');
 }
+{ // CONCEPT2 LOGBOOK LINK (l9)
+  const realFetch = globalThis.fetch, seen = [];
+  let tokenN = 0;
+  globalThis.fetch = async (u, o = {}) => {
+    u = String(u); if (!u.startsWith('https://c2.test')) return realFetch(u, o);
+    seen.push([u, o.headers && (o.headers.Authorization || o.headers.authorization)]);
+    if (u.endsWith('/oauth/access_token')) { const f = new URLSearchParams(o.body); tokenN++;
+      if (f.get('client_secret') !== 'sec') return new Response('{}', { status: 401 });
+      if (f.get('grant_type') === 'authorization_code') { assert.equal(f.get('code'), 'abc'); assert.equal(f.get('redirect_uri'), 'https://x/api/c2/cb'); return Response.json({ access_token: 'A1', refresh_token: 'R1', expires_in: 1 }); }
+      assert.equal(f.get('grant_type'), 'refresh_token'); assert.equal(f.get('refresh_token'), 'R1'); return Response.json({ access_token: 'A2', refresh_token: 'R2', expires_in: 604800 }); }
+    if (u.includes('/api/users/me/results/77/strokes')) return Response.json({ data: [{ t: 0, d: 0, p: 1200, spm: 20, hr: 0 }, { t: 30, d: 120, p: 1180, spm: 22, hr: 130 }] });
+    if (u.includes('/api/users/me/results/78/strokes')) return new Response('nf', { status: 404 });
+    if (u.includes('/api/users/me/results')) { const q = new URL(u).searchParams; assert.equal(q.get('type'), 'rower');
+      return Response.json({ data: [{ id: 77, date: '2026-11-24 18:00:00', date_utc: '2026-11-25 00:00:00', distance: 2000, time: 4800, workout_type: 'JustRow', stroke_rate: 24, junk: 'x' }], meta: { pagination: { current_page: 1, total_pages: 1 } } }); }
+    if (u.endsWith('/api/users/me')) return Response.json({ data: { first_name: 'Jeff', last_name: 'S<b>' } });
+    return new Response('nf', { status: 404 });
+  };
+  const E = Object.assign({}, env, { C2_CLIENT_ID: 'cid', C2_CLIENT_SECRET: 'sec', C2_BASE: 'https://c2.test' });
+  const lk = 'a'.repeat(64), H = { 'X-C2-Link': lk };
+  const R = async r => (await r.text()).match(/data-r="(\w+)"/)[1];
+  const G = (path, e, h) => loader.fetch(new Request('https://x/api/c2/' + path, { headers: h || H }), e || E);
+  // not set up yet: friendly answers
+  assert.equal((await G('status', env)).status, 503);
+  assert.equal(await R(await G('cb?code=1&state=1', env)), 'notset');
+  assert.equal((await (await loader.fetch(new Request('https://x/api/config'), E)).json()).c2, true);
+  // start → Concept2 login page with our client, read-only scope and a state
+  let r = await G('start?lk=' + lk); assert.equal(r.status, 302); const loc = new URL(r.headers.get('location'));
+  assert.equal(loc.origin + loc.pathname, 'https://c2.test/oauth/authorize'); assert.equal(loc.searchParams.get('scope'), 'user:read,results:read'); assert.equal(loc.searchParams.get('redirect_uri'), 'https://x/api/c2/cb');
+  const st = loc.searchParams.get('state'); assert.match(st, /^[0-9a-f]{32}$/);
+  assert.equal((await G('start?lk=nothex')).status, 400);
+  assert.equal((await G('status')).status, 200); assert.equal((await (await G('status')).json()).linked, false);
+  // a wrong state or a refusal goes back to the app with a reason
+  assert.equal(await R(await G('cb?code=abc&state=' + 'f'.repeat(32))), 'expired');
+  assert.equal(await R(await G('cb?error=access_denied&state=' + st)), 'denied');
+  r = await G('cb?code=abc&state=' + st); assert.equal(await R(r), 'ok');
+  assert.equal(await R(await G('cb?code=abc&state=' + st)), 'expired');   // a state works once
+  let s = await (await G('status')).json(); assert.equal(s.linked, true); assert.equal(s.name, 'Jeff Sb');
+  // the token came back already expired: the next call refreshes it, then reads results (only the fields we use)
+  r = await (await G('results?from=2026-11-01')).json(); assert.equal(r.results.length, 1); assert.equal(r.results[0].id, 77); assert.equal(r.results[0].junk, undefined);
+  assert.ok(seen.some(x => x[0].includes('/results?') && x[1] === 'Bearer A2'));
+  r = await (await G('strokes?id=77')).json(); assert.deepEqual(r.strokes[1], [30, 120, 1180, 22, 130]);
+  r = await (await G('strokes?id=78')).json(); assert.deepEqual(r.strokes, []);
+  assert.equal((await G('strokes?id=1;drop')).status, 400);
+  // another phone's key sees nothing; the database holds only a hash of the key
+  assert.equal((await G('results', E, { 'X-C2-Link': 'b'.repeat(64) })).status, 404);
+  assert.equal(await db.prepare('SELECT COUNT(*) AS n FROM c2_links WHERE lh = ?1').bind(lk).first().then(x => x.n), 0);
+  // disconnect
+  await loader.fetch(new Request('https://x/api/c2/unlink', { method: 'POST', headers: H }), E);
+  s = await (await G('status')).json(); assert.equal(s.linked, false);
+  globalThis.fetch = realFetch;
+  console.log('CONCEPT2 TESTS PASSED');
+}

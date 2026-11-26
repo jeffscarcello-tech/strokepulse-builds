@@ -219,6 +219,7 @@ body.glare .tiles button{box-shadow:none}
       <div class="row"><span>Weight <span class="muted" style="font-weight:400">(for calories)</span></span><span><input id="stWeight" type="number" inputmode="decimal" class="numin"> <span id="stWUnit" class="muted"></span></span></div>
       <p class="muted" style="padding-top:6px;font-size:13px">Tap the name at the top right to switch rowers, add one, or join a crew.</p>
     </div>
+    <div class="card" id="c2Card"></div>
     <div class="card"><h2>Main screen</h2>
       <div class="row"><span>Boxes on main screen</span><div class="seg" data-set="layout"><button data-v="3">3</button><button data-v="4">4</button><button data-v="6">6</button></div></div>
     </div>
@@ -743,7 +744,7 @@ setInterval(()=>{ workoutTick(); sampleTick(); if($('scr-live').classList.contai
 /* brand bar above the title on every screen except the rowing screen (and the Menu, which has its own header) */
 function brandBar(sec){ if(!sec || sec.id === 'scr-live' || sec.id === 'scr-menu' || sec.querySelector('.brandbar')) return; const top = sec.querySelector('.top'); if(!top) return;
   const b = document.createElement('div'); b.className = 'brandbar'; b.innerHTML = '<img src="/icon.svg?v=__BUILD__" alt=""><span class="wm"><b>Stroke</b><i>Pulse</i></span>'; b.onclick = () => go('menu'); sec.insertBefore(b, top); }
-function go(name){ brandBar(document.getElementById('scr-'+name)); if(window.ANA && name!=='history') ANA.leaving(); document.querySelectorAll('.screen').forEach(s=>s.classList.remove('on')); $('scr-'+name).classList.add('on');
+function go(name){ brandBar(document.getElementById('scr-'+name)); if(name==='menu' && window.ERG) ERG.render(); if(window.ANA && name!=='history') ANA.leaving(); document.querySelectorAll('.screen').forEach(s=>s.classList.remove('on')); $('scr-'+name).classList.add('on');
   if(name==='menu') renderMenu(); if(name==='settings') renderSettings(); if(name==='history') renderHistory(); }
 document.addEventListener('click',e=>{ const g=e.target.closest('[data-go]'); if(g) go(g.dataset.go); });
 $('menuBtn').onclick=()=>go('menu');
@@ -820,11 +821,11 @@ function openDetail(id){
       data.laps.map(l=>'<tr style="'+(l.type==='rest'?'color:var(--dim)':'')+'"><td>'+(l.type==='rest'?'rest':(l.type==='split'?'·'+l.n:l.n))+'</td><td>'+fmtDist(l.d)+'</td><td>'+fmtTime(l.t)+'</td><td>'+(l.t>0?fmtSplit(l.d/l.t):'–')+'</td><td>'+(l.rate||0).toFixed(1)+'</td><td>'+(l.s>0?(l.d/l.s).toFixed(1):'–')+'</td></tr>').join('')+'</table></div>';
   }
   html+='<div id="coxBox"></div>';
-  html+='<button class="big" id="exCsv">Export CSV (spreadsheet)</button><button class="big alt" id="exGpx">Export GPX (Strava / maps)</button><button class="big red" id="delS" style="margin-bottom:30px">Delete Session</button>';
+  html+='<button class="big" id="exCsv">Export CSV (spreadsheet)</button>'+(data.indoor?'':'<button class="big alt" id="exGpx">Export GPX (Strava / maps)</button>')+'<button class="big red" id="delS" style="margin-bottom:30px">Delete Session</button>';
   $('dBody').innerHTML=html; $('dBody').scrollTop=0;
   ANA.detailWire(id, sm, data);
   if(window.COX) COX.detail(id, sm, data);
-  $('exCsv').onclick=()=>exportFile(sm, data, 'csv'); $('exGpx').onclick=()=>exportFile(sm, data, 'gpx');
+  $('exCsv').onclick=()=>exportFile(sm, data, 'csv'); if($('exGpx')) $('exGpx').onclick=()=>exportFile(sm, data, 'gpx');
   $('delS').onclick=()=>{ if(!confirm(SYNC.on ? 'Delete this session from this phone and the backup?' : 'Delete this session?')) return; if(window.COX) COX.deleteLocal(id); if(window.LU) LU.uncredit(id, sm); LS.del('sp_s_'+id); LS.set('sp_index', LS.get('sp_index',[]).filter(x=>x.id!==id));
     if(sm.synced){ const d=LS.get('sp_deleted',[]); d.push(id); LS.set('sp_deleted',d); syncNow(); } go('history'); };
 }
@@ -1018,5 +1019,6 @@ window.__SP = { processAccel, strokeEvent, mot, S, handleFix, gps, reportInfo, r
 <script src="/analytics.js?v=__BUILD__"></script>
 <script src="/train.js?v=__BUILD__"></script>
 <script src="/lineup.js?v=__BUILD__"></script>
+<script src="/erg.js?v=__BUILD__"></script>
 </body>
 </html>

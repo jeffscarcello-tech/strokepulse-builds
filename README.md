@@ -3,6 +3,7 @@
 StrokePulse is a GPS speed coach for iPhone (rowing and paddling), with Cox mode, training plans and crews. It is a single-page web app served by a Cloudflare Worker and updated automatically from this repo.
 
 ## Recent changes
+- Nov 25 2026, v3.22 (sp-20261125v, loader l9): Concept2 erg import from the Concept2 Logbook (`erg.js`, `/api/c2/*`). Needs Concept2 API keys as Worker secrets C2_CLIENT_ID / C2_CLIENT_SECRET.
 - Nov 25 2026, v3.21 (sp-20261125u): the pinned Cox chart scrolls away once the map comes up (`.cxwrap` in cox.js).
 - Nov 25 2026, v3.20 (sp-20261125t): session detail shows the map near the bottom, just above Export.
 - Nov 25 2026, v3.19 (sp-20261125s): pause marker when the app is off screen mid-row (`closePause` in index.html; `gaps`/`closed` saved with the session; `pauseHtml`/`mapPauses` in analytics.js).
@@ -38,6 +39,12 @@ Push `test/app.json` + `test/build.txt` → the GitHub webhook pings `strokepuls
   - Every part starts with a marker (1), 2), •) because the Gmail app on iPhone drops line breaks when it sends. With the markers the email still reads in order.
 - **The details (`reportInfo()`):** build and label, device with iOS or Android version, home-screen app or browser, screen and window size, current page, online, counts only (sessions, rowers and lineups on this phone; crews; Cox mode, demo and recording on or off), time and user agent. No names, routes, recordings or notes are included.
 - **For tests:** `window.__SP` exposes `reportInfo`, `reportUrl`, `reportProblem` and `reportSheet`. The browser test is `source/tests/browser/report_problem.py`.
+
+## Concept2 erg import (v3.22)
+- **App:** `erg.js` (window.ERG). Menu card `#c2Card`. Each rower keeps `sp_c2_<rower id>` = { lk (random link key), linked, name, ids imported, last, checked }.
+- **Connect:** the phone opens `/api/c2/start?lk=…` → Concept2 login (scope `user:read,results:read`) → `/api/c2/cb` exchanges the code and shows a "Concept2 connected" page. Back in the app, the next open or return to the screen checks `/api/c2/status` and imports.
+- **Import:** `/api/c2/results?from=` (rower workouts, up to 500) and `/api/c2/strokes?id=` per workout. Strokes are turned into 1-second samples (no GPS), laps and rests for intervals; the session gets `indoor` details (Concept2 id, avg HR, drag) and the History name "Erg · Just Row" / "Erg · 4 × 500m".
+- **Server:** stores only a hash of the link key with the Concept2 tokens (`c2_links`); refreshes the week-long access token itself. Test with `C2_BASE` pointing at `source/tests/browser/c2mock.mjs`.
 
 ## Layout
 - `test/`: the installed test build. `live/` comes later.
