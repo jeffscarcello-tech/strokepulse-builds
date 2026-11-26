@@ -6,7 +6,7 @@ SEED = src.split('SEED = r"""', 1)[1].split('"""', 1)[0]
 U = sys.argv[1] if len(sys.argv) > 1 else 'https://127.0.0.1:8787/'
 OK = []
 def check(c, msg, extra=''): OK.append(c); print('PASS' if c else 'FAIL', msg, extra)
-ORDER = """()=>{ const kids=[...document.getElementById('dBody').children]; const name=e=>e.id==='exCsv'?'EXPORT':e.id==='coxBox'?'COX':((e.querySelector('h2')||{}).textContent||(e.querySelector('.grid3')?'STATS':'?')); return kids.map(name).filter(n=>n) }"""
+ORDER = """()=>{ const kids=[...document.getElementById('dBody').children]; const name=e=>e.id==='exCsv'?'EXPORT':(e.id==='coxBox'||e.classList.contains('cxwrap'))?'COX':((e.querySelector('h2')||{}).textContent||(e.querySelector('.grid3')?'STATS':'?')); return kids.map(name).filter(n=>n) }"""
 async def run(p, w, h):
     b = await p.chromium.launch(); ctx = await b.new_context(viewport={'width':w,'height':h}, has_touch=True, is_mobile=w < 600, ignore_https_errors=True, service_workers='block')
     pg = await ctx.new_page(); errs = []; pg.on('pageerror', lambda e: errs.append(str(e)))

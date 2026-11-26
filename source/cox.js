@@ -420,7 +420,12 @@ async function renderAnalysis(box, opts){
   const { data, sid, getChunks, getAudio, retx } = opts;
   box.innerHTML = '<div class="card"><h2>Cox Calls</h2><p class="muted" id="cxaStat">Loading the recording…</p></div>';
   const anchor = box.closest('#coxBox') || box, host = document.createElement('div');
-  host.className = 'cxpanel'; host.style.display = 'none'; anchor.parentNode.insertBefore(host, anchor);
+  host.className = 'cxpanel'; host.style.display = 'none';
+  // the chart stays pinned only while the Cox calls are on screen; past them (map, export) it scrolls away
+  let wrap = anchor.parentNode.classList.contains('cxwrap') ? anchor.parentNode : null;
+  if(!wrap){ wrap = document.createElement('div'); wrap.className = 'cxwrap'; anchor.parentNode.insertBefore(wrap, anchor); wrap.appendChild(anchor); }
+  wrap.querySelectorAll(':scope > .cxpanel').forEach(e => e.remove());
+  wrap.insertBefore(host, anchor);
   let chunks = [], tries = 0, redone = false;
   const load = async () => {
     try{ chunks = await getChunks(); }catch(e){ $c('cxaStat') && ($c('cxaStat').textContent = 'Recording not available offline yet — it will appear once it has uploaded.'); return; }

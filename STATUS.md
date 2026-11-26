@@ -5,7 +5,7 @@ GPS speed coach for iPhone (rowing and paddling), like the NK SpeedCoach GPS, pl
 ## Installed (checked Nov 25 2026, 11:20 AM Eastern)
 | Site | Address | App build | Loader | How to check |
 |---|---|---|---|---|
-| Test | https://strokepulsetest.jeffscarcello.workers.dev | **sp-20261125t (v3.20)** | **l8** (SHA-256 8cac9229…) | D1 `strokepulsetest`: `SELECT k, v FROM appmeta WHERE k IN ('ghbuild','ghlast')`; loader via Cloudflare content hash; `/api/health` on the site |
+| Test | https://strokepulsetest.jeffscarcello.workers.dev | **sp-20261125u (v3.21)** | **l8** (SHA-256 8cac9229…) | D1 `strokepulsetest`: `SELECT k, v FROM appmeta WHERE k IN ('ghbuild','ghlast')`; loader via Cloudflare content hash; `/api/health` on the site |
 | Live | not set up yet | — | — | — |
 
 ## Newest files
@@ -22,6 +22,7 @@ GPS speed coach for iPhone (rowing and paddling), like the NK SpeedCoach GPS, pl
   - Tested in a browser at 390 px (iPhone and Android) and 1280 px: item tap-sized, box opens, fits and focuses the first box, Open email closes it and the backup toast shows. Address, subject, CRLF line breaks and the 1) 2) • order with line breaks removed were all checked, plus counts right, no names, no page errors. Earlier server and browser tests still pass.
   - Not tested: a real email from a real phone, and Gmail on iPhone.
 
+- **v3.21 chart lets go at the map**: in a Cox session the pinned chart stayed on top all the way down, so the map scrolled under it. It now stays pinned only while the Cox calls are on screen, then scrolls up out of the way. Tested: `tests/browser/chart_unpin.py` at 390 and 1280 px, plus map_position, ana, train and server tests. Not tested: on your iPhone.
 - **v3.20 map lower in session detail**: the Map card now sits near the bottom, after the numbers, analysis, laps and Cox report, just above Export. Tested: `tests/browser/map_position.py` (order and map drawn, intervals and Cox sessions, 390 and 1280 px) plus pause_marker, map_jump, ana, crew. Not tested: the real Google map on a phone.
 - **v3.19 pause marker**: if the app goes off the screen during a row for 3 s or more, it's marked as a pause: a toast on return, a ⏸ box in the session (when and how long; strokes and rate not recorded; distance bridged), a ⏸ marker and dashed line on the map, and "⏸ paused" in History. If the phone closes the app while it's off screen, the recovered session says where it ended. Tested: `tests/browser/pause_marker.py` at 390 and 1280 px (all pass) plus map_jump, ana, train, report_problem and server tests. Not tested: a real iPhone locking mid-row.
 - **v3.18 demo/map jump fix**: a demo session used to start at the phone's real position (Winnipeg) before jumping to the demo boat. Demo now forgets the real fix at START, and the map, weather and saved weather skip any GPS jump faster than a boat can go. Tested: `tests/browser/map_jump.py` (map starts at the boat; demo session's first point is a demo point; no errors) plus ana, train, lineup, crew, goal, email, report_problem and server tests. Not tested: a real on-water row.
@@ -34,7 +35,7 @@ GPS speed coach for iPhone (rowing and paddling), like the NK SpeedCoach GPS, pl
 - Real-world checks: rowing on the water, the real Google map, the stroke curve from the phone's sensor, crew credit between real phones.
 
 ## Next version numbers
-- App: sp-20261125u (v3.21) or the next day's date letter a or the next day's date letter a. Loader: l9.
+- App: sp-20261125v (v3.22) or the next day's date letter a or the next day's date letter a. Loader: l9.
 
 ## Resources (StrokePulse owns only these)
 - GitHub repo `jeffscarcello-tech/strokepulse-builds` (public). Auto-update: push to `test/` → webhook → `strokepulse-updater` installs into D1.
