@@ -561,6 +561,8 @@ async function detailWire(id, sm, data){
   if(window.TRN) TRN.detailExtra(id, sm, data, $a('anaMap').closest('.card'));
   if(window.LU && data.lineup) $a('anaMap').closest('.card').insertAdjacentHTML('beforebegin', LU.detailHtml(data));
   piecesCard(card(), data); segCard(card(), data.samples || []); rateCard(card(), data.samples || []); sameCard(card(), sm, data);
+  // the map goes near the bottom, after the numbers, laps and Cox report, just above Export
+  const mapCard = $a('anaMap').closest('.card'), ex = $a('exCsv'); if(ex) ex.parentNode.insertBefore(mapCard, ex);
   // weather follows the map: the pin starts at the session start; tap the map to move it and the weather updates for that spot
   let wxSeq = 0;
   // weather saved for a spot far from the cleaned-up track (an old bad GPS fix) gets looked up again
